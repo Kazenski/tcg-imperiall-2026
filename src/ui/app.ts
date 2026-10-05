@@ -458,16 +458,18 @@ function pilhaElemento(lado: Jogador, indice: number, pilha: Pilha): HTMLElement
   // a caixa da pilha cresce junto com o conteúdo (ver `.zona` no CSS)
   zona.style.setProperty('--altura-pilha', String(Math.max(1, pilha.length)));
 
-  if (pilha.length === 0) {
-    const vazio = document.createElement('span');
-    vazio.className = 'pilha-vazia';
-    vazio.textContent = naMao !== null && lado === 0 ? 'crave aqui' : '';
-    zona.append(vazio);
-    if (naMao !== null && lado === 0) {
-      zona.classList.add('destino');
-      zona.addEventListener('click', () => empilhar(lado, indice));
-    }
-    return zona;
+  // Destino de empilhamento: a pilha só recebe a carta da mão se o
+  // nível dela for exatamente o que a carta pede. Vale tanto para
+  // pilha vazia (pede nível 0) quanto para pilha com cartas embaixo
+  // (pede um nível acima do topo) — é o que permite empilhar.
+  if (pilhaAceitaDaMao(lado, indice)) {
+    zona.classList.add('destino');
+    zona.addEventListener('click', (ev) => {
+      // O clique pode ter vindo de uma carta: não deixa a carta
+      // escolher o alvo e a pilha escolher o destino ao mesmo tempo.
+      ev.stopPropagation();
+      empilhar(naMao!, indice);
+    });
   }
 
   // Alvo de mecânica: pilha inteira (remover levels, rodar, espelhar)
@@ -482,6 +484,14 @@ function pilhaElemento(lado: Jogador, indice: number, pilha: Pilha): HTMLElement
     } else {
       zona.addEventListener('click', () => jogarEfeito({ zona: indice }));
     }
+  }
+
+  if (pilha.length === 0) {
+    const vazio = document.createElement('span');
+    vazio.className = 'pilha-vazia';
+    vazio.textContent = naMao !== null && lado === 0 ? 'crave aqui' : '';
+    zona.append(vazio);
+    return zona;
   }
 
   // Cada carta da pilha: as de baixo ficam "enfiadas" atrás.
@@ -550,6 +560,13 @@ function cartaElemento(
   // carta (senão "ver detalhes" virava "mudar de modo").
   el.addEventListener('click', (ev) => {
     ev.stopPropagation();
+    // Carta selecionada na mão + pilha que aceita o nível dela:
+    // clicar em qualquer carta da pilha empilha por cima dela. É o
+    // caminho para construir a pilha sem mirar a caixa da zona.
+    if (naMao !== null && pilhaAceitaDaMao(lado, info.zona)) {
+      empilhar(naMao, info.zona);
+      return;
+    }
     // Alvo de mecânica jogada da mão.
     const jaMarcada = marcasDe(instancia).length > 0;
     if (info.ativa && cartaAlvoValida(lado, instancia, jaMarcada)) {
@@ -561,7 +578,7 @@ function cartaElemento(
       return;
     }
     const selecionandoAtacante =
-      lado === 0 && info.ativa && estado.fase === 'combate' && estado.vez === 0;
+      lado === 0 && info.ativa && estado.fase === 'combate' && estado.vez === 0 && naMao === null;
     if (selecionandoAtacante) {
       selecionado = selecionado === instancia.uid ? null : instancia.uid;
     } else if (lado === 1 && info.ativa && selecionado && estado.fase === 'combate') {
@@ -663,8 +680,7 @@ function maoDo(): HTMLElement {
       }
       // Se só uma pilha serve, empilha direto; se várias, deixa escolher.
       if (candidatas.length === 1) {
-        naMao = null;
-        empilhar(0, candidatas[0]!);
+        empilhar(uid, candidatas[0]!);
         return;
       }
       naMao = naMao === uid ? null : uid;
@@ -751,6 +767,22 @@ function jogandoEhReacao(): boolean {
   return jogando !== null && CARTAS_POR_ID[cartaIdDe(jogando)]?.tipo === 'reacao';
 }
 
+/**
+ * A pilha `zona` aceita a carta que está selecionada na mão agora?
+ *
+ * Vale para o seu campo inteiro: pilha vazia pede nível 0, e pilha
+ * com cartas embaixo pede exatamente um nível acima do topo. É essa
+ * verificação que acende o `.destino` e habilita o clique.
+ */
+function pilhaAceitaDaMao(lado: Jogador, zona: number): boolean {
+  if (naMao === null || lado !== 0) return false;
+  if (estado.fase !== 'principal' || estado.vez !== 0) return false;
+  if (jogando !== null) return false;
+  const carta = CARTAS_POR_ID[cartaIdDe(naMao)];
+  if (!carta || carta.tipo === 'acao' || carta.tipo === 'reacao') return false;
+  return pilhasQueAceitam(estado, 0, carta.nivel).includes(zona);
+}
+
 /** A pilha é alvo legal para a mecânica em jogo? */
 function pilhaAlvoValida(lado: Jogador, zona: number): boolean {
   if (!jogando) return false;
@@ -781,18 +813,24 @@ function cartaAlvoValida(lado: Jogador, ativa: Instancia | null, marcada: boolea
 // --- Ações --------------------------------------------------------------
 
 /** Empilha a carta escolhida na mão (`naMao`) na pilha `zona`. */
-function empilhar(lado: Jogador, zona: number): void {
-  if (naMao === null) return;
-  const uid = naMao;
-  const motivo = motivoNaoPodeInvocar(estado, lado, uid, zona);
+/**
+ * Invoca a carta `uid` da mão na pilha `zona`.
+ *
+ * O uid vem explícito porque a chamada automática (quando só uma
+ * pilha aceita aquele nível) acontece sem passar por `naMao` — e
+ * limpar `naMao` antes de chamar fazia o empilhamento não acontecer.
+ */
+function empilhar(uid: string, zona: number): void {
+  const motivo = motivoNaoPodeInvocar(estado, 0, uid, zona);
   if (motivo) {
     naMao = null;
+    render();
     aviso(motivo);
     return;
   }
   selecionado = null;
   naMao = null;
-  estado = invocar(estado, lado, uid, zona).estado;
+  estado = invocar(estado, 0, uid, zona).estado;
   render();
 }
 
