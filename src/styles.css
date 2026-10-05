@@ -309,3 +309,165 @@ body {
     min-height: 130px;
   }
 }
+
+/* --- Ações da HUD ----------------------------------------------- */
+
+.acoes {
+  display: flex;
+  gap: 8px;
+}
+
+.botao-sec {
+  background: transparent;
+  color: var(--texto);
+  border: 1px solid var(--borda);
+  border-radius: 8px;
+  padding: 10px 14px;
+  cursor: pointer;
+}
+
+.botao-sec:hover {
+  border-color: var(--ouro);
+}
+
+/* --- Level e dano no placar ------------------------------------- */
+
+.lp .level {
+  font-size: 0.8rem;
+  color: var(--ouro);
+  font-weight: 700;
+}
+
+.lp .dano {
+  font-size: 0.7rem;
+  opacity: 0.6;
+}
+
+/* --- Badge de modo ---------------------------------------------- */
+
+.modo {
+  position: absolute;
+  top: -9px;
+  right: -9px;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.85rem;
+  cursor: pointer;
+  border: 2px solid var(--borda);
+  background: var(--painel);
+}
+
+.modo.ataque {
+  border-color: var(--atk);
+}
+
+.modo.defesa {
+  border-color: var(--def);
+}
+
+/* --- Admin ------------------------------------------------------- */
+
+.admin-overlay {
+  position: fixed;
+  inset: 0;
+  background: #000a;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10;
+  padding: 16px;
+}
+
+.admin {
+  background: var(--painel);
+  border: 1px solid var(--borda);
+  border-radius: 12px;
+  padding: 20px;
+  width: min(560px, 100%);
+  max-height: 90vh;
+  overflow-y: auto;
+}
+
+.admin h2 {
+  margin: 0 0 12px;
+  font-size: 1.1rem;
+}
+
+.admin h3 {
+  margin: 16px 0 8px;
+  font-size: 0.9rem;
+  opacity: 0.75;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.admin-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.admin-campo {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 0.8rem;
+}
+
+.admin-campo input,
+.admin-campo select {
+  background: #10131a;
+  border: 1px solid var(--borda);
+  border-radius: 6px;
+  color: var(--texto);
+  padding: 8px 10px;
+  font-size: 0.9rem;
+}
+
+.admin-erro {
+  color: var(--atk);
+  font-size: 0.8rem;
+  margin: 0;
+  min-height: 1em;
+}
+
+.admin-botoes {
+  display: flex;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.admin-lista ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.admin-lista li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  background: #10131a;
+  border: 1px solid var(--borda);
+  border-radius: 8px;
+  padding: 8px 12px;
+  font-size: 0.85rem;
+}
+
+.admin-lista li.admin-vazio {
+  justify-content: center;
+  opacity: 0.6;
+}
+
+.admin-stats {
+  opacity: 0.7;
+  font-size: 0.78rem;
+}

@@ -20,6 +20,48 @@
 import type { CartaTCG } from '../core/types.ts';
 
 export const CARTAS: CartaTCG[] = [
+  // -- Nível 0: o povo — invocável mesmo em level 0 -----------------
+  {
+    id: 'sertanejo',
+    nome: 'Sertanejo',
+    descricao: 'Do sertão, com um bastão e fé. Vai onde a seca mandar.',
+    raridade: 'comum',
+    nivel: 0,
+    atk: 300,
+    def: 250,
+    eva: 0,
+  },
+  {
+    id: 'gato-de-rua',
+    nome: 'Gato de Rua',
+    descricao: 'Ninguém sabe de onde veio. Sobrevive a tudo.',
+    raridade: 'comum',
+    nivel: 0,
+    atk: 250,
+    def: 200,
+    eva: 0,
+  },
+  {
+    id: 'tocha-vigia',
+    nome: 'Tocha do Vigia',
+    descricao: 'Um pau e uma chama. Melhor que nada — e às vezes suficiente.',
+    raridade: 'comum',
+    nivel: 0,
+    atk: 350,
+    def: 150,
+    eva: 0,
+  },
+  {
+    id: 'cria-morcego',
+    nome: 'Cria de Morcego',
+    descricao: 'Ainda aprende a voar. Já sabe se esconder.',
+    raridade: 'comum',
+    nivel: 0,
+    atk: 200,
+    def: 200,
+    eva: 0,
+  },
+
   // -- Nível 1: o exército barato -----------------------------------------
   {
     id: 'recruta-espada',
@@ -251,22 +293,24 @@ export const CARTAS_POR_ID: Record<string, CartaTCG> = Object.fromEntries(
 );
 
 /**
- * Deck padrão de 20 cartas (2 cópias dos comuns, 1 das raras+).
- * Cada posição vira um uid único (`id#posição`) na criação do duelo.
+ * Deck padrão de 20 cartas: 8 de nível 0 (o povo), 6 de
+ * nível 1, 4 de nível 2-3 e 2 de nível 2-4. Cada posição
+ * vira um uid único (`id#posição`) na criação do duelo.
  */
 export function deckPadrao(): string[] {
   return [
+    'sertanejo', 'sertanejo',
+    'gato-de-rua', 'gato-de-rua',
+    'tocha-vigia', 'tocha-vigia',
+    'cria-morcego', 'cria-morcego',
     'recruta-espada', 'recruta-espada',
     'golem-ferro', 'golem-ferro',
     'goblin-saqueador', 'goblin-saqueador',
-    'morcego-sombra', 'morcego-sombra',
-    'gato-feral', 'gato-feral',
-    'sereia-vale', 'sereia-vale',
-    'espirito-abismo', 'espirito-abismo',
+    'sereia-vale',
+    'espirito-abismo',
     'arqueira-vigia',
+    'ogro-masmorra',
     'elmo-abismo',
-    'ogro-masmorra', 'ogro-masmorra',
     'dragao-jovem',
-    'imperador-ruina',
   ];
 }

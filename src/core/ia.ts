@@ -3,14 +3,14 @@
  *
  * Estratégia da v1 (intencionalmente simples, para o jogador
  * humano aprender as regras enquanto vence):
- *   1. Invoca a carta de maior nível da mão que couber
- *      (respeitando pontos de level e level do dono).
- *   2. Cada criatura ataca: prefere destruir a criatura inimiga
- *      mais fraca que ela vence (atk > def); sem alvo assim,
- *      ataca o jogador direto.
+ *   1. Invoca a carta de maior nível da mão enquanto couber
+ *      (level da partida e zonas livres — invocar não gasta).
+ *   2. Cada criatura em modo ATQUE ataca: prefere destruir a
+ *      criatura inimiga mais fraca que ela vence (atk > def);
+ *      sem alvo assim, ataca o jogador direto.
  *
  * Determinística: usa apenas o estado, sem aleatoriedade própria
- * (o RNG do duelo cuida das evasões).
+ * (o RNG do duelo cuida do resto).
  */
 
 import { CARTAS_POR_ID } from '../data/cartas.ts';
@@ -45,12 +45,13 @@ export function iaJogarTurno(estado: EstadoDuelo): EstadoDuelo {
     }
   }
 
-  // 2. Atacar com cada criatura que ainda não atacou.
+  // 2. Atacar com cada criatura em modo ataque que ainda não atacou.
   for (let i = 0; i < s.campo[jogador]!.length && s.vencedor === null; i++) {
     const zona = s.campo[jogador]![i];
-    if (zona == null || zona.atacou) continue;
+    if (zona == null || zona.atacou || zona.modo !== 'ataque') continue;
 
-    // Alvo: a criatura inimiga de menor def que esta vence.
+    // Alvo: a criatura inimiga de menor def que esta vence
+    // (em modo ataque — quebra a defesa e fere).
     const alvos = s.campo[adversario(jogador)]!
       .map((z, indice) => ({ z, indice }))
       .filter((e): e is { z: Instancia; indice: number } => e.z != null);
@@ -62,8 +63,16 @@ export function iaJogarTurno(estado: EstadoDuelo): EstadoDuelo {
 
     if (venciveis.length > 0) {
       const escolha = venciveis[0]!;
-      if (motivoNaoPodeAtacar(s, jogador, zona.uid, { tipo: 'carta', uid: escolha.e.z.uid }) === null) {
-        s = atacar(s, jogador, zona.uid, { tipo: 'carta', uid: escolha.e.z.uid }).estado;
+      if (
+        motivoNaoPodeAtacar(s, jogador, zona.uid, {
+          tipo: 'carta',
+          uid: escolha.e.z.uid,
+        }) === null
+      ) {
+        s = atacar(s, jogador, zona.uid, {
+          tipo: 'carta',
+          uid: escolha.e.z.uid,
+        }).estado;
       }
     } else if (motivoNaoPodeAtacar(s, jogador, zona.uid, { tipo: 'jogador' }) === null) {
       s = atacar(s, jogador, zona.uid, { tipo: 'jogador' }).estado;

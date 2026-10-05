@@ -8,24 +8,29 @@ import type { Rarity } from './raridade.ts';
 /**
  * Uma carta de criatura do TCG.
  *
- *   nivel  custo de invocação em pontos de level E requisito mínimo do
- *          level do dono (o nível do herói do idle RPG).
+ *   nivel  level exigido NA PARTIDA para invocar (0-8).
+ *          Não há gasto: só valida `levelPartida >= nivel`.
  *   atk    dano que causa ao atacar.
- *   def    absorve dano de batalha; defesas altas viram escudo.
- *   eva    % de chance de esquivar um ataque (cap em CAP_EVA).
+ *   def    absorve batalha; em modo defesa, defesas altas
+ *          seguram o golpe sem destruir a criatura.
+ *   eva    RESERVADA para cartas de efeitos especiais
+ *          (mágicas/armadilhas) — não afeta o combate.
  */
 export interface CartaTCG {
   id: string;
   nome: string;
   descricao: string;
   raridade: Rarity;
-  /** 1 a 8. */
+  /** 0 a 8. */
   nivel: number;
   atk: number;
   def: number;
-  /** 0 a 60 (%). */
+  /** 0 a 100 (só cartas de efeito futuro consomem). */
   eva: number;
 }
+
+/** Posição de uma criatura em campo. */
+export type Modo = 'ataque' | 'defesa';
 
 /** Uma carta em jogo: uid único (para rastrear posição na mão/campo). */
 export interface Instancia {
@@ -34,6 +39,7 @@ export interface Instancia {
   cartaId: string;
   /** Já atacou neste turno? */
   atacou: boolean;
+  modo: Modo;
 }
 
 export type Jogador = 0 | 1;
@@ -45,9 +51,15 @@ export interface EstadoDuelo {
   /** 0 = você, 1 = oponente. */
   vez: Jogador;
   turno: number;
-  nivelDono: Par<number>;
-  /** Pontos de level do turno: gasta-se o `nivel` de cada invocação. */
-  pontos: Par<number>;
+  /**
+   * Level do jogador NESTA partida. Só desce: -1 a cada
+   * 100 de dano recebido cumulativo, até 0.
+   */
+  levelPartida: Par<number>;
+  /** Level em que a partida começou (base do cálculo). */
+  levelInicial: Par<number>;
+  /** Dano recebido cumulativo (o level cai a cada 100). */
+  danoRecebido: Par<number>;
   lp: Par<number>;
   /** uids das cartas ainda no deck. */
   deck: Par<string[]>;
@@ -67,21 +79,29 @@ export interface EstadoDuelo {
 export type Alvo = { tipo: 'carta'; uid: string } | { tipo: 'jogador' };
 
 export interface EventoDuelo {
-  tipo: 'invocar' | 'ataque' | 'esquivar' | 'destruir' | 'dano' | 'turno' | 'draw' | 'fim';
+  tipo:
+    | 'invocar'
+    | 'ataque'
+    | 'modo'
+    | 'esquivar'
+    | 'destruir'
+    | 'dano'
+    | 'turno'
+    | 'draw'
+    | 'fim';
   mensagem: string;
 }
 
 export const ZONAS = 5;
 export const LP_INICIAL = 4000;
 export const MAO_INICIAL = 5;
-export const TAMANHO_DECK = 20;
-/** EVA jamais passa disso, por mais alta que seja a carta. */
-export const CAP_EVA = 60;
-
-/** Pontos de invocação do turno: base 3 + 1 por cada 10 níveis do dono. */
-export function pontosDeInvocacao(nivelDono: number): number {
-  return 3 + Math.floor(nivelDono / 10);
-}
+/** O deck do jogador pode crescer com as cartas do admin. */
+export const DECK_MINIMO = 5;
+export const DECK_MAXIMO = 60;
+/** Level em que a partida começa. */
+export const LEVEL_INICIAL = 10;
+/** A cada este tanto de dano cumulativo, o level cai 1. */
+export const DANO_POR_LEVEL = 100;
 
 /** A carta de um uid (`"golem-ferro#3"` -> `"golem-ferro"`). */
 export function cartaIdDe(uid: string): string {

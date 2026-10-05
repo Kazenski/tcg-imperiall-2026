@@ -3,45 +3,60 @@
  *
  * Fluxo de um turno:
  *   1. draw: o jogador da vez compra 1 carta (a partir do turno 2).
- *   2. main: invocar criaturas da mão (custa `nivel` em pontos de
- *      level e exige level do dono >= `nivel` da carta).
- *   3. batalha: cada criatura ataca no máximo 1 vez — contra uma
- *      criatura inimiga (EVA rola primeiro) ou contra o jogador.
- *   4. end: passa a vez, reseta pontos e as flags de ataque.
+ *   2. main: invocar criaturas da mão. NÃO HÁ GASTO: basta
+ *      ter `levelPartida >= nivel` da carta e uma zona livre.
+ *   3. batalha: cada criatura ataca no máximo 1 vez — contra
+ *      uma criatura inimiga ou contra o jogador.
+ *   4. end: passa a vez e compra 1.
  *
- * Batalha criatura x criatura (estilo clássico):
- *   - defensor esquiva (EVA)  -> nada acontece;
- *   - atk > def -> defensor toma a diferença, carta destruída;
- *   - atk < def -> atacante toma a diferença, carta destruída;
- *   - atk = def -> ambas destruídas, sem dano.
+ * Level na partida:
+ *   Começa em LEVEL_INICIAL e SÓ DESCE: a cada 100 de dano
+ *   recebido cumulativo, cai 1 (mínimo 0). Cartas de nível 0
+ *   existem para o duelo acontecer mesmo em level 0.
  *
- * Toda função recebe o estado e devolve um NOVO estado (o original
- * nunca é tocado). Regras inválidas lançam `Error` com a mensagem
- * que a UI mostra ao jogador.
+ * Modo ataque/defesa (estilo clássico):
+ *   - criatura em MODO ATAQUE:
+ *       atk > def -> alvo destruído, defensor toma a diferença;
+ *       atk < def -> atacante destruído, atacante toma a diferença;
+ *       empate    -> ambas destruídas, sem dano.
+ *   - criatura em MODO DEFESA:
+ *       atk > def -> alvo destruído, SEM dano ao defensor;
+ *       atk < def -> alvo sobrevive, atacante toma a diferença;
+ *       empate    -> nada acontece.
+ *   - ataque direto ao jogador: sempre acerta (dano = atk).
+ *
+ * EVA está reservada para cartas de efeitos especiais
+ * (mágicas/armadilhas) e NÃO afeta o combate.
+ *
+ * Toda função recebe o estado e devolve um NOVO estado (o
+ * original nunca é tocado). Regras inválidas lançam `Error`
+ * com a mensagem que a UI mostra ao jogador.
  */
 
 import { CARTAS_POR_ID } from '../data/cartas.ts';
 import { rngCriar } from './rng.ts';
 import {
-  CAP_EVA,
+  DECK_MAXIMO,
+  DECK_MINIMO,
+  DANO_POR_LEVEL,
+  LEVEL_INICIAL,
   MAO_INICIAL,
-  TAMANHO_DECK,
   ZONAS,
   cartaIdDe,
-  pontosDeInvocacao,
   type Alvo,
   type EstadoDuelo,
   type EventoDuelo,
   type Instancia,
   type Jogador,
+  type Modo,
   type Par,
 } from './types.ts';
 
 export interface OpcaoDuelo {
   /** ids das cartas do deck de cada jogador (ex.: `deckPadrao()`). */
   deck: Par<string[]>;
-  /** Level do herói de cada jogador: requisito de invocação e bônus de pontos. */
-  nivelDono: Par<number>;
+  /** Level em que cada jogador começa (padrão 10). */
+  levelInicial?: Par<number>;
   seed?: number;
 }
 
@@ -53,15 +68,6 @@ function registrar(estado: EstadoDuelo, evento: EventoDuelo): EventoDuelo {
   estado.log.push(evento.mensagem);
   if (estado.log.length > 60) estado.log.shift();
   return evento;
-}
-
-function rng(estado: EstadoDuelo) {
-  return rngCriar(estado.rngState);
-}
-
-/** Avança a seed guardada no estado (determinístico entre partidas). */
-function avancarSeed(estado: EstadoDuelo): void {
-  estado.rngState = (estado.rngState * 1103515245 + 12345) >>> 0;
 }
 
 function adversario(jogador: Jogador): Jogador {
@@ -80,12 +86,11 @@ function embaralhar(cartas: string[], seed: number): { ordem: string[]; seed: nu
 }
 
 export function dueloNovo(opcao: OpcaoDuelo): EstadoDuelo {
-  for (const n of opcao.nivelDono) {
-    if (!Number.isInteger(n) || n < 0) throw new Error('level do dono inválido');
-  }
   for (const deck of opcao.deck) {
-    if (deck.length !== TAMANHO_DECK) {
-      throw new Error(`o deck precisa de ${TAMANHO_DECK} cartas (tem ${deck.length})`);
+    if (deck.length < DECK_MINIMO || deck.length > DECK_MAXIMO) {
+      throw new Error(
+        `o deck precisa de ${DECK_MINIMO} a ${DECK_MAXIMO} cartas (tem ${deck.length})`,
+      );
     }
   }
 
@@ -99,11 +104,17 @@ export function dueloNovo(opcao: OpcaoDuelo): EstadoDuelo {
     seed = r.seed;
   }
 
+  const nivelInicial = opcao.levelInicial ?? [LEVEL_INICIAL, LEVEL_INICIAL];
+  for (const n of nivelInicial) {
+    if (!Number.isInteger(n) || n < 0) throw new Error('level inicial inválido');
+  }
+
   const estado: EstadoDuelo = {
     vez: 0,
     turno: 1,
-    nivelDono: [...opcao.nivelDono] as Par<number>,
-    pontos: [0, 0],
+    levelPartida: [...nivelInicial] as Par<number>,
+    levelInicial: [...nivelInicial] as Par<number>,
+    danoRecebido: [0, 0],
     lp: [4000, 4000],
     deck: decks,
     mao: [[], []],
@@ -145,12 +156,34 @@ function comprar(estado: EstadoDuelo, jogador: Jogador, silencioso = false): voi
   }
 }
 
-/** Prepara pontos e draw do turno do jogador da vez. */
+/** Prepara o turno do jogador da vez (draw a partir do turno 2). */
 function iniciarTurno(estado: EstadoDuelo, draw: boolean): void {
   const vez = estado.vez;
-  estado.pontos[vez] = pontosDeInvocacao(estado.nivelDono[vez]!);
-  for (const zona of estado.campo[vez]!) zona?.atacou && (zona.atacou = false);
+  for (const zona of estado.campo[vez]!) {
+    if (zona) zona.atacou = false;
+  }
   if (draw) comprar(estado, vez);
+}
+
+/**
+ * Aplica dano a um jogador: o LP desce e o dano CUMULATIVO
+ * sobe — a cada 100 acumulados, o level da partida cai 1.
+ */
+function aplicarDano(estado: EstadoDuelo, jogador: Jogador, quantidade: number): void {
+  if (quantidade <= 0) return;
+  estado.lp[jogador] = Math.max(0, estado.lp[jogador]! - quantidade);
+  estado.danoRecebido[jogador] = estado.danoRecebido[jogador]! + quantidade;
+  const novoLevel = Math.max(
+    0,
+    estado.levelInicial[jogador]! - Math.floor(estado.danoRecebido[jogador]! / DANO_POR_LEVEL),
+  );
+  if (novoLevel < estado.levelPartida[jogador]!) {
+    estado.levelPartida[jogador] = novoLevel;
+    registrar(estado, {
+      tipo: 'dano',
+      mensagem: `Jogador ${jogador + 1} caiu para level ${novoLevel} (${estado.danoRecebido[jogador]} de dano cumulativo).`,
+    });
+  }
 }
 
 /** Motivo de não poder invocar, ou null se pode. */
@@ -164,11 +197,8 @@ export function motivoNaoPodeInvocar(
   if (!estado.mao[jogador]!.includes(uid)) return 'essa carta não está na sua mão';
   const carta = CARTAS_POR_ID[cartaIdDe(uid)];
   if (!carta) return 'carta desconhecida';
-  if (estado.nivelDono[jogador]! < carta.nivel) {
-    return `seu level (${estado.nivelDono[jogador]}) não alcança o nível ${carta.nivel} da carta`;
-  }
-  if (estado.pontos[jogador]! < carta.nivel) {
-    return `faltam pontos de level (tem ${estado.pontos[jogador]}, a carta custa ${carta.nivel})`;
+  if (estado.levelPartida[jogador]! < carta.nivel) {
+    return `seu level na partida (${estado.levelPartida[jogador]}) não alcança o nível ${carta.nivel} da carta`;
   }
   if (estado.campo[jogador]!.every((z) => z !== null)) return 'campo cheio (5 criaturas)';
   return null;
@@ -186,15 +216,40 @@ export function invocar(
   const cartaId = cartaIdDe(uid);
   const carta = CARTAS_POR_ID[cartaId]!;
   s.mao[jogador] = s.mao[jogador]!.filter((u) => u !== uid);
-  s.pontos[jogador] = s.pontos[jogador]! - carta.nivel;
   const zona = s.campo[jogador]!.findIndex((z) => z === null);
-  s.campo[jogador]![zona] = { uid, cartaId, atacou: false };
+  s.campo[jogador]![zona] = { uid, cartaId, atacou: false, modo: 'ataque' };
 
   return {
     estado: s,
     evento: registrar(s, {
       tipo: 'invocar',
       mensagem: `Jogador ${jogador + 1} invocou ${carta.nome} (nível ${carta.nivel}).`,
+    }),
+  };
+}
+
+/** Troca uma criatura entre modo ataque e defesa. */
+export function alternarModo(
+  estado: EstadoDuelo,
+  jogador: Jogador,
+  uid: string,
+): { estado: EstadoDuelo; evento: EventoDuelo } {
+  const s = novo(estado);
+  if (s.vencedor !== null) throw new Error('o duelo já acabou');
+  if (s.vez !== jogador) throw new Error('não é a sua vez');
+  const achado = instanciaNoCampo(s, jogador, uid);
+  if (!achado) throw new Error('essa criatura não está no seu campo');
+  if (achado.instancia.atacou) {
+    throw new Error('criatura que já atacou não troca de modo neste turno');
+  }
+  const carta = CARTAS_POR_ID[achado.instancia.cartaId]!;
+  const proximo: Modo = achado.instancia.modo === 'ataque' ? 'defesa' : 'ataque';
+  achado.instancia.modo = proximo;
+  return {
+    estado: s,
+    evento: registrar(s, {
+      tipo: 'modo',
+      mensagem: `${carta.nome} entrou em modo ${proximo}.`,
     }),
   };
 }
@@ -224,6 +279,9 @@ export function motivoNaoPodeAtacar(
   const atacante = instanciaNoCampo(estado, jogador, uidAtacante);
   if (!atacante) return 'essa criatura não está no seu campo';
   if (atacante.instancia.atacou) return 'essa criatura já atacou neste turno';
+  if (atacante.instancia.modo !== 'ataque') {
+    return 'criatura em modo defesa não ataca';
+  }
   if (alvo.tipo === 'carta') {
     if (!instanciaNoCampo(estado, adversario(jogador), alvo.uid)) {
       return 'a criatura-alvo não está no campo inimigo';
@@ -260,61 +318,72 @@ export function atacar(
   const cartaAtacante = CARTAS_POR_ID[atacante.instancia.cartaId]!;
   atacante.instancia.atacou = true;
 
-  // EVA: a criatura-alvo (ou o dono, se for ataque direto a uma
-  // criatura) tem chance de esquivar. Ataque direto ao jogador
-  // sempre acerta.
-  const defesaEVA = alvo.tipo === 'carta'
-    ? Math.min(CartaEVA(alvo.uid, s, alvoJogador), CAP_EVA)
-    : 0;
-  avancarSeed(s);
-  if (defesaEVA > 0 && rng(s).chance(defesaEVA / 100)) {
-    const nome = alvo.tipo === 'carta'
-      ? CARTAS_POR_ID[cartaIdDe(alvo.uid)]!.nome
-      : `Jogador ${alvoJogador + 1}`;
-    return {
-      estado: s,
-      evento: registrar(s, {
-        tipo: 'esquivar',
-        mensagem: `${nome} evadiu o ataque de ${cartaAtacante.nome}!`,
-      }),
-    };
-  }
-
   if (alvo.tipo === 'jogador') {
-    s.lp[alvoJogador] = s.lp[alvoJogador]! - cartaAtacante.atk;
+    // Ataque direto: sempre acerta.
+    aplicarDano(s, alvoJogador, cartaAtacante.atk);
     const evento = registrar(s, {
       tipo: 'dano',
       mensagem: `${cartaAtacante.nome} atacou direto: ${cartaAtacante.atk} de dano ao Jogador ${alvoJogador + 1}.`,
     });
-    checarFim(s, evento);
+    checarFim(s);
     return { estado: s, evento };
   }
 
-  // Criatura x criatura.
+  // Criatura x criatura: o MODO do alvo muda tudo.
   const alvoCampo = instanciaNoCampo(s, alvoJogador, alvo.uid)!;
   const cartaAlvo = CARTAS_POR_ID[alvoCampo.instancia.cartaId]!;
-  const { atk, def } = { atk: cartaAtacante.atk, def: cartaAlvo.def };
+  const atk = cartaAtacante.atk;
+  const def = cartaAlvo.def;
 
+  if (alvoCampo.instancia.modo === 'defesa') {
+    if (atk > def) {
+      destruir(s, alvoJogador, alvoCampo.indice, cartaAlvo.nome);
+      const evento = registrar(s, {
+        tipo: 'destruir',
+        mensagem: `${cartaAtacante.nome} rompeu a defesa de ${cartaAlvo.nome} (sem dano ao jogador).`,
+      });
+      checarFim(s);
+      return { estado: s, evento };
+    }
+    if (atk < def) {
+      const dano = def - atk;
+      aplicarDano(s, jogador, dano);
+      const evento = registrar(s, {
+        tipo: 'dano',
+        mensagem: `${cartaAlvo.nome} segurou em defesa: ${dano} de dano rebatido em ${cartaAtacante.nome}.`,
+      });
+      checarFim(s);
+      return { estado: s, evento };
+    }
+    const evento = registrar(s, {
+      tipo: 'ataque',
+      mensagem: `${cartaAtacante.nome} bateu na defesa de ${cartaAlvo.nome}: empate, nada acontece.`,
+    });
+    checarFim(s);
+    return { estado: s, evento };
+  }
+
+  // Alvo em modo ataque.
   if (atk > def) {
     const dano = atk - def;
-    s.lp[alvoJogador] = s.lp[alvoJogador]! - dano;
+    aplicarDano(s, alvoJogador, dano);
     destruir(s, alvoJogador, alvoCampo.indice, cartaAlvo.nome);
     const evento = registrar(s, {
       tipo: 'dano',
       mensagem: `${cartaAtacante.nome} destruiu ${cartaAlvo.nome} e causou ${dano} de dano.`,
     });
-    checarFim(s, evento);
+    checarFim(s);
     return { estado: s, evento };
   }
   if (atk < def) {
     const dano = def - atk;
-    s.lp[jogador] = s.lp[jogador]! - dano;
+    aplicarDano(s, jogador, dano);
     destruir(s, jogador, atacante.indice, cartaAtacante.nome);
     const evento = registrar(s, {
       tipo: 'dano',
-      mensagem: `${cartaAlvo.nome} segurou: ${cartaAtacante.nome} destruída, ${dano} de dano rebatido.`,
+      mensagem: `${cartaAlvo.nome} venceu: ${cartaAtacante.nome} destruída, ${dano} de dano rebatido.`,
     });
-    checarFim(s, evento);
+    checarFim(s);
     return { estado: s, evento };
   }
   destruir(s, alvoJogador, alvoCampo.indice, cartaAlvo.nome);
@@ -323,17 +392,11 @@ export function atacar(
     tipo: 'destruir',
     mensagem: `${cartaAtacante.nome} e ${cartaAlvo.nome} se destruíram mutuamente.`,
   });
-  checarFim(s, evento);
+  checarFim(s);
   return { estado: s, evento };
 }
 
-function CartaEVA(uid: string, estado: EstadoDuelo, jogador: Jogador): number {
-  const achado = instanciaNoCampo(estado, jogador, uid);
-  if (!achado) return 0;
-  return CARTAS_POR_ID[achado.instancia.cartaId]!.eva;
-}
-
-function checarFim(s: EstadoDuelo, ultimo: EventoDuelo): void {
+function checarFim(s: EstadoDuelo): void {
   for (const lado of [0, 1] as const) {
     if (s.lp[lado]! <= 0) {
       s.vencedor = adversario(lado);
@@ -343,10 +406,9 @@ function checarFim(s: EstadoDuelo, ultimo: EventoDuelo): void {
       });
     }
   }
-  void ultimo;
 }
 
-/** Passa a vez: reseta pontos, limpa flags de ataque, compra 1. */
+/** Passa a vez: limpa flags de ataque e compra 1. */
 export function terminarTurno(estado: EstadoDuelo): { estado: EstadoDuelo; evento: EventoDuelo } {
   const s = novo(estado);
   if (s.vencedor !== null) throw new Error('o duelo já acabou');
@@ -357,7 +419,7 @@ export function terminarTurno(estado: EstadoDuelo): { estado: EstadoDuelo; event
     estado: s,
     evento: registrar(s, {
       tipo: 'turno',
-      mensagem: `— Turno ${s.turno}: vez do Jogador ${s.vez + 1} (${s.pontos[s.vez]} pontos de level).`,
+      mensagem: `— Turno ${s.turno}: vez do Jogador ${s.vez + 1}.`,
     }),
   };
 }
