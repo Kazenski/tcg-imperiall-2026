@@ -1,18 +1,27 @@
 /**
- * UI do duelo — DOM/CSS. Sem Phaser na v1: um TCG é cartas e
- * texto; o DOM já faz isso bem.
+ * UI do duelo — DOM/CSS. Sem Phaser: um TCG é cartas e texto;
+ * o DOM já faz isso bem.
  *
  * Layout em 3 colunas:
  *   esquerda  → log do duelo
- *   centro    → fases, decks, campos, mão
- *   direita  → detalhes da carta selecionada (amplificada)
+ *   centro    → campos (pilhas), separador de fases, mão
+ *   direita  → detalhes da carta clicada (ampliada)
  *
- * Efeitos de ataque:
- *   - vulto: projétil do atacante até o alvo
- *   - fogo: chama no HP quando ataque direto
- *   - seta: linha do atacante até o alvo
+ * Conceito de PILHA: cada zona do campo é uma pilha de cartas
+ * empilhadas de baixo (índice 0) para cima. Só a carta de CIMA de
+ * cada pilha está ativa: é a que ataca e a que pode ser atacada.
+ * Para invocar é preciso respeitar a ordem de níveis — pilha
+ * vazia aceita só nível 0, e a partir daí cada nova carta precisa
+ * ser exatamente um nível acima do topo.
  *
- * A IA joga com delays (para o jogador ver as fases).
+ * Interação:
+ *   - clique em QUALQUER carta (mão, pilha, enterrada) abre os
+ *     detalhes na coluna da direita;
+ *   - na fase principal, carta da mão + clique numa pilha empilha;
+ *   - no combate, clique na carta ativa e depois no alvo — uma
+ *     seta acompanha o alvo selecionado.
+ *
+ * A IA joga em passos (`iaPassos`) com delays, para o jogador ver.
  *
  * O estado nunca é mutado aqui: cada ação vem do `core/` como um
  * estado novo, e a tela é redesenhada do zero.
@@ -26,8 +35,10 @@ import {
   invocar,
   motivoNaoPodeAtacar,
   motivoNaoPodeInvocar,
+  pilhasQueAceitam,
   proximaFase,
 } from '../core/duelo.ts';
+import { iaPassos, type EtapaIA } from '../core/ia.ts';
 import { CARTAS_POR_ID, deckPadrao } from '../data/cartas.ts';
 import {
   URL_CARTAS_OFICIAL,
@@ -44,28 +55,33 @@ import { RARITY_CLASS } from '../core/raridade.ts';
 import type { Rarity } from '../core/raridade.ts';
 import {
   FASES_ORDEM,
+  cartaAtiva,
   cartaIdDe,
+  indiceAtivo,
   type Alvo,
   type CartaTCG,
   type EstadoDuelo,
   type Instancia,
   type Jogador,
+  type Pilha,
 } from '../core/types.ts';
 
 const app = document.querySelector<HTMLDivElement>('#app')!;
 
-/** Seleção de ataque em curso (uid da criatura do jogador). */
+/** Atirador selecionado no combate (uid da carta ativa do jogador). */
 let selecionado: string | null = null;
+/** Carta da mão escolhida para empilhar (uid ou null). */
+let naMao: string | null = null;
 /** Painel do admin aberto? */
 let adminAberto = false;
 /** Estado do duelo em curso. */
 let estado: EstadoDuelo;
 /** Cartas do jogador: oficiais (GitHub) + locais (localStorage). */
 let cartas: CartaTCG[];
-/** Carta selecionada para detalhes (uid ou null). */
+/** Carta mostrada ampliada na lateral (uid ou null). */
 let detalheUid: string | null = null;
 /** Animação de ataque em curso. */
-let animacao: { tipo: 'vulto' | 'fogo' | 'seta'; de: string; para: string } | null = null;
+let animacao: { tipo: 'vulto' | 'fogo'; de: string; para: string } | null = null;
 
 export async function iniciar(): Promise<void> {
   const [oficiais, locais] = await Promise.all([
@@ -95,6 +111,12 @@ function aviso(mensagem: string): void {
 }
 
 function render(): void {
+  // As setas vivem no `body` (para poderem pointer-events: none e
+  // não serem presas dentro do #app), então precisam ser removidas
+  // aqui — `app.innerHTML = ''` não as alcançaria.
+  for (const seta of document.querySelectorAll('.seta-ataque, .vulto, .fogo-hp')) {
+    seta.remove();
+  }
   app.innerHTML = '';
   const layout = document.createElement('div');
   layout.className = 'layout';
@@ -102,6 +124,7 @@ function render(): void {
   app.append(hud(), layout);
   if (adminAberto) app.append(adminPanel());
   if (animacao) aplicarAnimacao();
+  if (selecionado) aplicarSeta();
 }
 
 // --- HUD ---------------------------------------------------------------
@@ -112,7 +135,7 @@ function hud(): HTMLElement {
 
   const turno = document.createElement('div');
   turno.className = 'turno';
-  turno.innerHTML = `<strong>Turno ${estado.turno}</strong><span>vez do Jogador ${estado.vez + 1}</span>`;
+  turno.innerHTML = `<strong>Turno ${estado.turno}</strong><span>vez do ${estado.vez === 0 ? 'Jogador 1' : 'Oponente'}</span>`;
 
   const placar = document.createElement('div');
   placar.className = 'placar';
@@ -126,18 +149,16 @@ function hud(): HTMLElement {
       <span class="level">Lv ${estado.levelPartida[lado]}</span>
       <span class="dano">${estado.danoRecebido[lado]} dano sofrido</span>`;
 
-    // Só fica "alvejável" se o jogador 0 tem um atacante
-    // selecionado E o ataque direto é legal (campo inimigo vazio).
+    // O HP só fica "alvejável" com um atacante selecionado E quando o
+    // direto é legal (campo inimigo sem nenhuma carta).
     if (lado === 1 && selecionado && estado.fase === 'combate' && estado.vez === 0) {
       if (motivoNaoPodeAtacar(estado, 0, selecionado, { tipo: 'jogador' }) === null) {
         pl.classList.add('alvejavel');
         pl.title = 'Clique para atacar a vida diretamente';
-        pl.addEventListener('click', () => {
-          tentarAtaque(selecionado!, { tipo: 'jogador' });
-        });
+        pl.addEventListener('click', () => tentarAtaque(selecionado!, { tipo: 'jogador' }));
       } else {
         pl.classList.add('bloqueado');
-        pl.title = 'Campo inimigo tem criaturas: ataque uma carta';
+        pl.title = 'O oponente tem criaturas no campo: ataque uma carta';
       }
     }
     placar.append(pl);
@@ -158,12 +179,14 @@ function hud(): HTMLElement {
   botaoNovo.addEventListener('click', () => {
     estado = novoDuelo();
     selecionado = null;
+    naMao = null;
     detalheUid = null;
     render();
   });
   const botaoFase = document.createElement('button');
   botaoFase.className = 'botao-turno';
-  botaoFase.textContent = estado.fase === 'fim' ? 'Passar turno' : 'Próxima fase';
+  botaoFase.textContent = estado.vencedor !== null ? 'Duelo encerrado' : proximoRotulo();
+  botaoFase.disabled = estado.vencedor !== null;
   botaoFase.addEventListener('click', () => {
     if (estado.vencedor !== null) return;
     avancarFase();
@@ -171,125 +194,58 @@ function hud(): HTMLElement {
   acoes.append(botaoAdmin, botaoNovo, botaoFase);
 
   bar.append(turno, placar, acoes);
+  if (estado.vencedor !== null) {
+    const fim = document.createElement('div');
+    fim.className = 'fim-duelo';
+    fim.textContent = estado.vencedor === 0 ? '🏆 Você venceu!' : '💀 Oponente venceu!';
+    bar.append(fim);
+  }
   return bar;
 }
 
-/** Avança a fase; se a vez passar para a IA, ela joga com delays. */
-async function avancarFase(): Promise<void> {
-  let s = proximaFase(estado).estado;
-  selecionado = null;
-  estado = s;
-  render();
-  // Se a vez passou para a IA, ela joga o turno inteiro com tempo.
-  if (s.vez === 1 && s.vencedor === null) {
-    await iaComDelays();
-  }
+function proximoRotulo(): string {
+  return estado.fase === 'fim' ? 'Passar turno' : 'Próxima fase';
 }
 
-/** A IA joga o turno inteiro com delays entre as fases. */
+/** Avança a fase; se a vez passar para a IA, ela joga com tempo. */
+async function avancarFase(): Promise<void> {
+  selecionado = null;
+  naMao = null;
+  estado = proximaFase(estado).estado;
+  render();
+  if (estado.vez === 1 && estado.vencedor === null) await iaComDelays();
+}
+
+/** Quanto a UI espera por etapa da IA (ms). */
+const ESPERA_IA: Record<EtapaIA, number> = {
+  compra: 900,
+  invocou: 800,
+  atacou: 1100,
+  passou: 500,
+};
+
+/** Roda a IA em passos, redesenhando e esperando entre cada um. */
 async function iaComDelays(): Promise<void> {
   const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
-  let s = estado;
-  const jogador = s.vez;
-
-  // 1. Fase de compra.
-  if (s.fase === 'compra' && s.vencedor === null) {
-    await sleep(800);
-    s = comprarCarta(s, jogador).estado;
-    estado = s;
-    render();
-  }
-
-  // 2. Fase principal: invoca 1 monstro.
-  if (s.fase === 'principal' && s.vencedor === null) {
-    await sleep(800);
-    const mao = [...s.mao[jogador]!].sort((a, b) => {
-      const na = CARTAS_POR_ID[cartaIdDe(a)]!.nivel;
-      const nb = CARTAS_POR_ID[cartaIdDe(b)]!.nivel;
-      return nb - na;
-    });
-    for (const uid of mao) {
-      if (motivoNaoPodeInvocar(s, jogador, uid) === null) {
-        s = invocar(s, jogador, uid).estado;
-        estado = s;
-        render();
-        break;
-      }
+  const gen = iaPassos(estado);
+  for (;;) {
+    const passo = gen.next();
+    if (passo.done) {
+      estado = passo.value;
+      break;
     }
-    await sleep(600);
-    s = proximaFase(s).estado;
-    estado = s;
+    estado = passo.value.estado;
     render();
+    await sleep(ESPERA_IA[passo.value.etapa]);
   }
-
-  // 3. Fase de combate: cada criatura ataca.
-  if (s.fase === 'combate' && s.vencedor === null) {
-    for (let i = 0; i < s.campo[jogador]!.length && s.vencedor === null; i++) {
-      const zona = s.campo[jogador]![i];
-      if (zona == null || zona.atacou || zona.modo !== 'ataque') continue;
-      await sleep(700);
-      const alvos = s.campo[adversario(jogador)]!
-        .map((z, indice) => ({ z, indice }))
-        .filter((e): e is { z: Instancia; indice: number } => e.z != null);
-      const atacante = CARTAS_POR_ID[zona.cartaId]!;
-      const venciveis = alvos
-        .map((e) => ({ e, alvo: CARTAS_POR_ID[e.z.cartaId]! }))
-        .filter((x) => atacante.atk > x.alvo.def)
-        .sort((a, b) => a.alvo.def - b.alvo.def);
-
-      if (venciveis.length > 0) {
-        const escolha = venciveis[0]!;
-        if (
-          motivoNaoPodeAtacar(s, jogador, zona.uid, {
-            tipo: 'carta',
-            uid: escolha.e.z.uid,
-          }) === null
-        ) {
-          s = atacar(s, jogador, zona.uid, {
-            tipo: 'carta',
-            uid: escolha.e.z.uid,
-          }).estado;
-          estado = s;
-          render();
-          await sleep(700);
-        }
-      } else if (motivoNaoPodeAtacar(s, jogador, zona.uid, { tipo: 'jogador' }) === null) {
-        s = atacar(s, jogador, zona.uid, { tipo: 'jogador' }).estado;
-        estado = s;
-        render();
-        await sleep(700);
-      }
-    }
-    s = proximaFase(s).estado;
-    estado = s;
-    render();
-  }
-
-  // 4. Finalização → fim → termina turno.
-  if (s.fase === 'finalizacao' && s.vencedor === null) {
-    await sleep(500);
-    s = proximaFase(s).estado;
-    estado = s;
-    render();
-  }
-  if (s.fase === 'fim' && s.vencedor === null) {
-    await sleep(500);
-    s = proximaFase(s).estado;
-    estado = s;
-    render();
-  }
+  render();
 }
 
-function adversario(jogador: 0 | 1): 0 | 1 {
-  return jogador === 0 ? 1 : 0;
-}
-
-// --- Centro (fases, decks, campos, mão) -------------------------------
+// --- Centro ------------------------------------------------------------
 
 function centroPainel(): HTMLElement {
   const centro = document.createElement('div');
   centro.className = 'centro';
-  centro.append(barraFases());
 
   // Oponente: deck na ESQUERDA, campo ao lado.
   const inimigo = document.createElement('div');
@@ -301,11 +257,11 @@ function centroPainel(): HTMLElement {
   jogador.className = 'lado jogador';
   jogador.append(campoDo(0), deckDo(0));
 
-  centro.append(inimigo, jogador, maoDo());
+  centro.append(inimigo, barraFases(), jogador, maoDo());
   return centro;
 }
 
-/** Barra de fases do turno (estilo YGO). */
+/** Separador de fases — fica ENTRE os dois campos. */
 function barraFases(): HTMLElement {
   const barra = document.createElement('nav');
   barra.className = 'fases';
@@ -316,6 +272,10 @@ function barraFases(): HTMLElement {
     if (estado.fase === fase) el.title = descricaoFase(fase);
     barra.append(el);
   }
+  const legenda = document.createElement('span');
+  legenda.className = 'fase-legenda';
+  legenda.textContent = `${estado.vez === 0 ? 'Sua vez' : 'Vez do oponente'} — ${descricaoFase(estado.fase)}`;
+  barra.append(legenda);
   return barra;
 }
 
@@ -332,11 +292,11 @@ function nomeFase(fase: string): string {
 
 function descricaoFase(fase: string): string {
   switch (fase) {
-    case 'compra': return 'Clique no deck para comprar 1 carta';
-    case 'principal': return 'Invoque (1 monstro/turno), mude modos, use magias';
-    case 'combate': return 'Selecione o atacante e clique no alvo (vida só com campo inimigo vazio)';
-    case 'finalizacao': return 'Avançar sem ações';
-    case 'fim': return 'Última olhada — sem mexer no campo';
+    case 'compra': return 'clique no seu deck para comprar 1 carta';
+    case 'principal': return 'clique numa carta da mão e depois na pilha que vai receber';
+    case 'combate': return 'clique na sua carta ativa e depois no alvo (ou na vida, se o campo inimigo estiver vazio)';
+    case 'finalizacao': return 'avance sem ações';
+    case 'fim': return 'última olhada — passe o turno';
     default: return '';
   }
 }
@@ -347,31 +307,30 @@ function deckDo(lado: Jogador): HTMLElement {
   const sec = document.createElement('section');
   sec.className = 'deck';
   const titulo = document.createElement('h2');
-  titulo.textContent = `Deck ${lado === 0 ? '(você)' : '(oponente)'} (${estado.deck[lado]!.length})`;
+  titulo.textContent = `${lado === 0 ? 'Seu deck' : 'Deck inimigo'} (${estado.deck[lado]!.length})`;
   sec.append(titulo);
 
   const pilha = document.createElement('div');
   pilha.className = 'deck-pilha';
-  const carta = document.createElement('div');
-  carta.className = 'carta vertical deck-carta';
-  carta.innerHTML = `
-    <span class="deck-verso">🂠</span>
-    <span class="deck-texto">${lado === 0 ? 'Clique para comprar' : 'Oponente'}</span>`;
-  if (lado === 0 && estado.fase === 'compra' && estado.vez === 0 && estado.vencedor === null) {
-    carta.classList.add('clicavel');
-    carta.addEventListener('click', () => {
-      const r = comprarCarta(estado, 0);
+  const verso = document.createElement('div');
+  verso.className = 'carta deck-carta';
+  verso.innerHTML = `<span class="deck-verso">🂠</span><span class="deck-texto">${lado === 0 ? 'Comprar' : 'Oponente'}</span>`;
+  const podeComprar = lado === 0 && estado.fase === 'compra' && estado.vez === 0 && estado.vencedor === null;
+  if (podeComprar) {
+    verso.classList.add('clicavel');
+    verso.addEventListener('click', () => {
       selecionado = null;
-      estado = r.estado;
+      naMao = null;
+      estado = comprarCarta(estado, 0).estado;
       render();
     });
   }
-  pilha.append(carta);
+  pilha.append(verso);
   sec.append(pilha);
   return sec;
 }
 
-// --- Campo -------------------------------------------------------------
+// --- Campo (pilhas) ----------------------------------------------------
 
 function campoDo(lado: Jogador): HTMLElement {
   const sec = document.createElement('section');
@@ -379,29 +338,80 @@ function campoDo(lado: Jogador): HTMLElement {
   const titulo = document.createElement('h2');
   titulo.textContent = lado === 0 ? 'Seu campo' : 'Campo inimigo';
   sec.append(titulo);
+
   const zonas = document.createElement('div');
-  // O campo inimigo é espelhado (zonas em ordem inversa) para os
-  // dois campos ficarem simétricos, como numa mesa de cartas.
+  // O campo inimigo é espelhado para os dois lados ficarem simétricos.
   zonas.className = 'zonas' + (lado === 1 ? ' espelhado' : '');
   for (let i = 0; i < estado.campo[lado]!.length; i++) {
-    const slot = document.createElement('div');
-    slot.className = 'zona';
-    slot.dataset.zona = String(i);
-    const instancia = estado.campo[lado]![i] ?? null;
-    if (instancia) slot.append(cartaElemento(lado, instancia));
-    zonas.append(slot);
+    zonas.append(pilhaElemento(lado, i, estado.campo[lado]![i]!));
   }
   sec.append(zonas);
   return sec;
 }
 
-function cartaElemento(lado: Jogador, instancia: Instancia): HTMLElement {
+/** Uma zona do campo: a pilha de cartas, da de baixo para a de cima. */
+function pilhaElemento(lado: Jogador, indice: number, pilha: Pilha): HTMLElement {
+  const zona = document.createElement('div');
+  const ativa = cartaAtiva(pilha);
+  zona.className = 'zona';
+  zona.dataset.zona = String(indice);
+  zona.dataset.lado = String(lado);
+  if (pilha.length === 0) zona.classList.add('vazia');
+  if (ativa && selecionado && estado.fase === 'combate' && lado === 1) {
+    if (motivoNaoPodeAtacar(estado, 0, selecionado, { tipo: 'carta', uid: ativa.uid }) === null) {
+      zona.classList.add('alvo-valido');
+    }
+  }
+
+  const marco = document.createElement('span');
+  marco.className = 'pilha-marca';
+  marco.textContent = pilha.length > 0 ? `P${indice + 1} · ${pilha.length} carta${pilha.length > 1 ? 's' : ''}` : `P${indice + 1}`;
+  zona.append(marco);
+  // a caixa da pilha cresce junto com o conteúdo (ver `.zona` no CSS)
+  zona.style.setProperty('--altura-pilha', String(Math.max(1, pilha.length)));
+
+  if (pilha.length === 0) {
+    const vazio = document.createElement('span');
+    vazio.className = 'pilha-vazia';
+    vazio.textContent = naMao !== null && lado === 0 ? 'crave aqui' : '';
+    zona.append(vazio);
+    if (naMao !== null && lado === 0) {
+      zona.classList.add('destino');
+      zona.addEventListener('click', () => empilhar(lado, indice));
+    }
+    return zona;
+  }
+
+  // Cada carta da pilha: as de baixo ficam "enfiadas" atrás.
+  const altura = pilha.length;
+  for (let i = 0; i < altura; i++) {
+    const instancia = pilha[i]!;
+    const el = cartaElemento(lado, instancia, {
+      ativa: i === indiceAtivo(pilha),
+      profundidade: altura - 1 - i,
+      zona: indice,
+    });
+    el.style.setProperty('--prof', String(i));
+    zona.append(el);
+  }
+  return zona;
+}
+
+/** Uma carta em campo (ativa ou enfiada na pilha). */
+function cartaElemento(
+  lado: Jogador,
+  instancia: Instancia,
+  info: { ativa: boolean; profundidade: number; zona: number },
+): HTMLElement {
   const carta = CARTAS_POR_ID[instancia.cartaId]!;
   const el = document.createElement('div');
   el.className = `carta vertical ${RARITY_CLASS[carta.raridade]}`;
   el.dataset.uid = instancia.uid;
-  if (instancia.atacou) el.classList.add('atacou');
+  el.dataset.prof = String(info.profundidade);
+  if (!info.ativa) el.classList.add('enterrada');
+  if (instancia.atacou && info.ativa) el.classList.add('atacou');
   if (selecionado === instancia.uid) el.classList.add('selecionada');
+  if (detalheUid === instancia.uid) el.classList.add('vendo');
   el.innerHTML = `
     <span class="carta-nome">${carta.nome}</span>
     <span class="carta-nivel">Nv ${carta.nivel}</span>
@@ -409,48 +419,62 @@ function cartaElemento(lado: Jogador, instancia: Instancia): HTMLElement {
       <b class="atk">⚔ ${carta.atk}</b>
       <b class="def">🛡 ${carta.def}</b>
     </span>`;
-  el.title = `${carta.nome} — nível ${carta.nivel} (exige level ${carta.nivel} na partida)`;
+  el.title =
+    `${carta.nome} — nível ${carta.nivel}\n` +
+    (info.ativa ? 'carta ativa da pilha' : `enterrada na pilha ${info.zona + 1}`) +
+    ' — clique para ver detalhes';
 
-  // Clique para ver detalhes (sempre).
-  el.addEventListener('click', () => {
+  // Clique na carta: SEMPRE mostra os detalhes. O que acontece
+  // depois depende de onde ela está e da fase:
+  //   - combate, minha carta ativa → seleciona como atacante;
+  //   - combate, carta ativa do inimigo → ataca;
+  //   - o resto → só os detalhes.
+  // Alternar ataque/defesa fica no badge ⚔/🛡, não no clique da
+  // carta (senão "ver detalhes" virava "mudar de modo").
+  el.addEventListener('click', (ev) => {
+    ev.stopPropagation();
+    const selecionandoAtacante =
+      lado === 0 && info.ativa && estado.fase === 'combate' && estado.vez === 0;
+    if (selecionandoAtacante) {
+      selecionado = selecionado === instancia.uid ? null : instancia.uid;
+    } else if (lado === 1 && info.ativa && selecionado && estado.fase === 'combate') {
+      tentarAtaque(selecionado, { tipo: 'carta', uid: instancia.uid });
+      return;
+    }
     detalheUid = instancia.uid;
     render();
   });
 
-  if (lado === 0) {
-    // Badge de modo: alterna ataque/defesa (fase principal).
+  if (lado === 0 && info.ativa) {
     const modo = document.createElement('span');
     modo.className = `modo ${instancia.modo}`;
     modo.textContent = instancia.modo === 'ataque' ? '⚔' : '🛡';
     modo.title = `Modo ${instancia.modo} — clique para alternar`;
-    modo.addEventListener('click', (e) => {
-      e.stopPropagation();
-      tentarModo(instancia.uid);
+    if (estado.fase === 'combate') {
+      modo.title = `Modo ${instancia.modo} — o modo só muda na fase principal`;
+    }
+    modo.addEventListener('click', (ev) => {
+      ev.stopPropagation();
+      detalheUid = instancia.uid;
+      if (estado.fase !== 'principal') {
+        render();
+        aviso('O modo ataque/defesa só muda na fase principal');
+        return;
+      }
+      trocarModo(instancia.uid);
     });
     el.append(modo);
-
-    // Selecionar atacante (fase combate).
-    if (estado.fase === 'combate') {
-      el.addEventListener('click', () => {
-        selecionado = selecionado === instancia.uid ? null : instancia.uid;
-        render();
-      });
-    }
-  } else if (selecionado && estado.fase === 'combate') {
-    el.addEventListener('click', () => {
-      tentarAtaque(selecionado!, { tipo: 'carta', uid: instancia.uid });
-    });
   }
   return el;
 }
 
-// --- Mão (scroll horizontal) -------------------------------------------
+// --- Mão ----------------------------------------------------------------
 
 function maoDo(): HTMLElement {
   const mao = document.createElement('section');
   mao.className = 'mao';
   const label = document.createElement('h2');
-  label.textContent = `Mão (${estado.mao[0]!.length})`;
+  label.textContent = `Sua mão (${estado.mao[0]!.length})`;
   mao.append(label);
   const lista = document.createElement('div');
   lista.className = 'mao-lista';
@@ -458,6 +482,9 @@ function maoDo(): HTMLElement {
     const carta = CARTAS_POR_ID[cartaIdDe(uid)]!;
     const el = document.createElement('div');
     el.className = `carta vertical na-mao ${RARITY_CLASS[carta.raridade]}`;
+    if (detalheUid === uid) el.classList.add('vendo');
+    if (naMao === uid) el.classList.add('selecionada');
+    el.dataset.uid = uid;
     el.innerHTML = `
       <span class="carta-nome">${carta.nome}</span>
       <span class="carta-nivel">Nv ${carta.nivel}</span>
@@ -465,20 +492,35 @@ function maoDo(): HTMLElement {
         <b class="atk">⚔ ${carta.atk}</b>
         <b class="def">🛡 ${carta.def}</b>
       </span>`;
-    el.title = `Exige level ${carta.nivel} na partida (você está em ${estado.levelPartida[0]})`;
+    el.title =
+      `Nível ${carta.nivel} — você está em Lv ${estado.levelPartida[0]}\n` +
+      'clique para ver detalhes; na fase principal, escolha e clique numa pilha';
+
     el.addEventListener('click', () => {
+      detalheUid = uid;
       if (estado.fase !== 'principal') {
-        aviso('Só se invoca na fase principal');
+        render();
         return;
       }
-      const motivo = motivoNaoPodeInvocar(estado, 0, uid);
-      if (motivo) {
-        aviso(motivo);
+      const candidatas = pilhasQueAceitam(estado, 0, carta.nivel);
+      if (candidatas.length === 0) {
+        naMao = null;
+        render();
+        aviso(
+          `Nenhuma pilha aceita nível ${carta.nivel} agora. ` +
+            (carta.nivel === 0
+              ? 'Comece empilhando uma carta de nível 0.'
+              : `Você precisa empilhar até o nível ${carta.nivel - 1} antes desta.`),
+        );
         return;
       }
-      const r = invocar(estado, 0, uid);
-      selecionado = null;
-      estado = r.estado;
+      // Se só uma pilha serve, empilha direto; se várias, deixa escolher.
+      if (candidatas.length === 1) {
+        naMao = null;
+        empilhar(0, candidatas[0]!);
+        return;
+      }
+      naMao = naMao === uid ? null : uid;
       render();
     });
     lista.append(el);
@@ -487,39 +529,28 @@ function maoDo(): HTMLElement {
   return mao;
 }
 
-// --- Ações -------------------------------------------------------------
+// --- Ações --------------------------------------------------------------
 
-function tentarAtaque(uid: string, alvo: Alvo): void {
-  const motivo = motivoNaoPodeAtacar(estado, 0, uid, alvo);
+/** Empilha a carta escolhida na mão (`naMao`) na pilha `zona`. */
+function empilhar(lado: Jogador, zona: number): void {
+  if (naMao === null) return;
+  const uid = naMao;
+  const motivo = motivoNaoPodeInvocar(estado, lado, uid, zona);
   if (motivo) {
+    naMao = null;
     aviso(motivo);
     return;
   }
-  const r = atacar(estado, 0, uid, alvo);
   selecionado = null;
-  estado = r.estado;
-  // Animação de ataque.
-  if (alvo.tipo === 'carta') {
-    animacao = { tipo: 'vulto', de: uid, para: alvo.uid };
-    render();
-    setTimeout(() => {
-      animacao = null;
-      render();
-    }, 700);
-  } else {
-    animacao = { tipo: 'fogo', de: uid, para: 'hp1' };
-    render();
-    setTimeout(() => {
-      animacao = null;
-      render();
-    }, 700);
-  }
+  naMao = null;
+  estado = invocar(estado, lado, uid, zona).estado;
+  render();
 }
 
-function tentarModo(uid: string): void {
+/** Alterna o modo da carta ativa entre ataque e defesa. */
+function trocarModo(uid: string): void {
   try {
-    const r = alternarModo(estado, 0, uid);
-    estado = r.estado;
+    estado = alternarModo(estado, 0, uid).estado;
   } catch (e) {
     aviso(e instanceof Error ? e.message : String(e));
     return;
@@ -527,43 +558,100 @@ function tentarModo(uid: string): void {
   render();
 }
 
-// --- Animações de ataque -----------------------------------------------
+function tentarAtaque(uid: string, alvo: Alvo): void {
+  const motivo = motivoNaoPodeAtacar(estado, 0, uid, alvo);
+  if (motivo) {
+    aviso(motivo);
+    return;
+  }
+  selecionado = null;
+  estado = atacar(estado, 0, uid, alvo).estado;
+  animacao =
+    alvo.tipo === 'carta'
+      ? { tipo: 'vulto', de: uid, para: alvo.uid }
+      : { tipo: 'fogo', de: uid, para: 'hp1' };
+  render();
+  setTimeout(() => {
+    animacao = null;
+    render();
+  }, 750);
+}
 
+// --- Setas e animações ---------------------------------------------------
+
+/** Desenha a seta do atacante até o alvo selecionado (ou o HP). */
+function aplicarSeta(): void {
+  if (!selecionado) return;
+  const de = app.querySelector<HTMLElement>(`[data-uid="${selecionado}"]`);
+  if (!de) return;
+
+  const emCombate = estado.fase === 'combate' && estado.vez === 0;
+  let destino: HTMLElement | null = null;
+  if (emCombate && motivoNaoPodeAtacar(estado, 0, selecionado, { tipo: 'jogador' }) === null) {
+    destino = app.querySelector<HTMLElement>('.lp[data-lado="1"]');
+  }
+  if (!destino) {
+    for (const zona of app.querySelectorAll<HTMLElement>('.campo.lado-1 .zona')) {
+      const ativa = zona.querySelector<HTMLElement>('.carta:not(.enterrada)');
+      if (ativa) {
+        destino = ativa;
+        break;
+      }
+    }
+  }
+  if (!destino) return;
+
+  const a = de.getBoundingClientRect();
+  const b = destino.getBoundingClientRect();
+  const seta = document.createElement('div');
+  seta.className = 'seta-ataque';
+  seta.style.left = `${a.left + a.width / 2}px`;
+  seta.style.top = `${a.top + a.height / 2}px`;
+  const dx = b.left + b.width / 2 - (a.left + a.width / 2);
+  const dy = b.top + b.height / 2 - (a.top + a.height / 2);
+  const comprimento = Math.hypot(dx, dy);
+  const angulo = (Math.atan2(dy, dx) * 180) / Math.PI;
+  seta.style.setProperty('--comprimento', `${comprimento}px`);
+  seta.style.setProperty('--angulo', `${angulo}deg`);
+  document.body.append(seta);
+}
+
+/** Efeito visual do golpe: vulto na carta ou fogo no HP. */
 function aplicarAnimacao(): void {
   if (!animacao) return;
   const { tipo, de, para } = animacao;
-  const deEl = app.querySelector(`[data-uid="${de}"]`);
+  const deEl = app.querySelector<HTMLElement>(`[data-uid="${de}"]`);
   if (!deEl) return;
 
   if (tipo === 'vulto') {
-    const paraEl = app.querySelector(`[data-uid="${para}"]`);
+    const paraEl = app.querySelector<HTMLElement>(`[data-uid="${para}"]`);
     if (!paraEl) return;
-    const deRect = deEl.getBoundingClientRect();
-    const paraRect = paraEl.getBoundingClientRect();
+    const a = deEl.getBoundingClientRect();
+    const b = paraEl.getBoundingClientRect();
     const vulto = document.createElement('div');
     vulto.className = 'vulto';
-    vulto.style.left = `${deRect.left + deRect.width / 2}px`;
-    vulto.style.top = `${deRect.top + deRect.height / 2}px`;
+    vulto.style.left = `${a.left + a.width / 2}px`;
+    vulto.style.top = `${a.top + a.height / 2}px`;
     document.body.append(vulto);
     requestAnimationFrame(() => {
-      vulto.style.transform = `translate(${paraRect.left + paraRect.width / 2 - deRect.left - deRect.width / 2}px, ${paraRect.top + paraRect.height / 2 - deRect.top - deRect.height / 2}px)`;
+      vulto.style.transform = `translate(${b.left + b.width / 2 - a.left - a.width / 2}px, ${b.top + b.height / 2 - a.top - a.height / 2}px)`;
       vulto.style.opacity = '0';
     });
     setTimeout(() => vulto.remove(), 700);
   }
 
   if (tipo === 'fogo') {
-    const hpEl = app.querySelector('[data-lado="1"]');
+    const hpEl = app.querySelector<HTMLElement>('[data-lado="1"]');
     if (!hpEl) return;
     const fogo = document.createElement('div');
     fogo.className = 'fogo-hp';
     fogo.textContent = '🔥';
     hpEl.append(fogo);
-    setTimeout(() => fogo.remove(), 700);
+    setTimeout(() => fogo.remove(), 750);
   }
 }
 
-// --- Log (lateral esquerda) -------------------------------------------
+// --- Log ----------------------------------------------------------------
 
 function logPanel(): HTMLElement {
   const aside = document.createElement('aside');
@@ -572,7 +660,7 @@ function logPanel(): HTMLElement {
   titulo.textContent = 'Log do duelo';
   aside.append(titulo);
   const lista = document.createElement('ol');
-  for (const linha of estado.log.slice(-20)) {
+  for (const linha of estado.log.slice(-24)) {
     const li = document.createElement('li');
     li.textContent = linha;
     lista.append(li);
@@ -581,34 +669,36 @@ function logPanel(): HTMLElement {
   const info = document.createElement('p');
   info.className = 'regra';
   info.textContent =
-    'Regra do combate: só se ataca a vida do inimigo quando o campo dele está ' +
-    'VAZIO. Havendo qualquer criatura em campo, é obrigatório atacar uma delas. ' +
-    'Vale igual para os dois lados. ' +
-    'Invocar não gasta: exige level da partida ≥ nível da carta. ' +
-    'A cada 100 de dano sofrido, seu level cai 1 (mínimo 0).';
+    'PILHAS: cada zona do campo é uma pilha. Só a carta de cima está ativa. ' +
+    'Para invocar, o nível tem que subir de 1 em 1: pilha vazia aceita só nível 0, ' +
+    'depois nível 1, e assim por diante — para ter uma carta nível 8 ativa é preciso ' +
+    'ter de 0 a 7 embaixo. As de baixo ficam guardadas para consultas e efeitos futuros.' +
+    'COMBATE: se o ATK do atacante passar a DEF do alvo, o alvo é destruído e a diferença ' +
+    'vai para a vida de quem perdeu; se a DEF for maior, o atacante morre e leva a diferença ' +
+    'para a vida. Contra alvo em DEFESA: DEF maior rebate a diferença no atacante, ATK maior ' +
+    'destrói o alvo sem causar dano. Só se ataca a vida direto com o campo inimigo VAZIO.';
   aside.append(info);
   return aside;
 }
 
-// --- Detalhes (lateral direita) ----------------------------------------
+// --- Detalhes -----------------------------------------------------------
 
 function detalhesPanel(): HTMLElement {
   const aside = document.createElement('aside');
   aside.className = 'detalhes';
   const titulo = document.createElement('h3');
-  titulo.textContent = 'Detalhes';
+  titulo.textContent = 'Detalhes da carta';
   aside.append(titulo);
 
   if (!detalheUid) {
     const vazio = document.createElement('p');
     vazio.className = 'detalhes-vazio';
-    vazio.textContent = 'Clique numa carta para ver detalhes.';
+    vazio.textContent = 'Clique em qualquer carta — da mão, do topo da pilha ou de uma carta enterrada — para ver aqui, ampliada.';
     aside.append(vazio);
     return aside;
   }
 
-  const cartaId = cartaIdDe(detalheUid);
-  const carta = CARTAS_POR_ID[cartaId];
+  const carta = CARTAS_POR_ID[cartaIdDe(detalheUid)];
   if (!carta) {
     const vazio = document.createElement('p');
     vazio.className = 'detalhes-vazio';
@@ -617,11 +707,15 @@ function detalhesPanel(): HTMLElement {
     return aside;
   }
 
+  // Onde essa carta está (pilha/altura) — consultas de pilha.
+  const onde = situacaoDaCarta(detalheUid);
+
   const ampliada = document.createElement('div');
   ampliada.className = `carta vertical ampliada ${RARITY_CLASS[carta.raridade]}`;
   ampliada.innerHTML = `
     <span class="carta-nome">${carta.nome}</span>
     <span class="carta-nivel">Nv ${carta.nivel}</span>
+    <span class="carta-arte" aria-hidden="true">🂠</span>
     <span class="carta-desc">${carta.descricao}</span>
     <span class="carta-stats">
       <b class="atk">⚔ ${carta.atk}</b>
@@ -630,14 +724,45 @@ function detalhesPanel(): HTMLElement {
     </span>`;
   aside.append(ampliada);
 
-  const info = document.createElement('p');
+  const info = document.createElement('dl');
   info.className = 'detalhes-info';
-  info.textContent = `Raridade: ${carta.raridade} · Exige level ${carta.nivel} na partida`;
+  info.innerHTML = `
+    <dt>Raridade</dt><dd>${carta.raridade}</dd>
+    <dt>Nível</dt><dd>${carta.nivel} (exige Lv ${carta.nivel}; você está em Lv ${estado.levelPartida[0]})</dd>
+    <dt>ATK</dt><dd>${carta.atk}</dd>
+    <dt>DEF</dt><dd>${carta.def}</dd>
+    <dt>EVA</dt><dd>${carta.eva}% (reservada para efeitos)</dd>
+    <dt>Situação</dt><dd>${onde}</dd>`;
   aside.append(info);
   return aside;
 }
 
-// --- Admin -------------------------------------------------------------
+/** Texto de onde a carta está (mão, pilha e altura, ou=dead). */
+function situacaoDaCarta(uid: string): string {
+  if (estado.mao[0]!.includes(uid)) return 'na sua mão';
+  for (let z = 0; z < estado.campo[0]!.length; z++) {
+    const pilha = estado.campo[0]![z]!;
+    const h = pilha.findIndex((i) => i.uid === uid);
+    if (h !== -1) {
+      return h === indiceAtivo(pilha)
+        ? `pilha ${z + 1}, carta ATIVA (topo)`
+        : `pilha ${z + 1}, carta enterrada (posição ${h + 1} de baixo)`;
+    }
+  }
+  for (let z = 0; z < estado.campo[1]!.length; z++) {
+    const pilha = estado.campo[1]![z]!;
+    const h = pilha.findIndex((i) => i.uid === uid);
+    if (h !== -1) {
+      return h === indiceAtivo(pilha)
+        ? `campo inimigo, pilha ${z + 1}, ATIVA`
+        : `campo inimigo, pilha ${z + 1}, enterrada`;
+    }
+  }
+  if (estado.cementerio[0]!.includes(uid)) return 'no seu cemitério';
+  return 'no deck';
+}
+
+// --- Admin --------------------------------------------------------------
 
 function adminPanel(): HTMLElement {
   const overlay = document.createElement('div');

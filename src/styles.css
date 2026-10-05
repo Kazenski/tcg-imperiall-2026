@@ -10,11 +10,17 @@
   --def: #4a9de0;
   --eva: #7dd87d;
   --fase-ativa: #c8a24a;
-  /* Tamanho da carta: único ponto de ajuste da responsividade. */
-  --carta-w: 110px;
-  --carta-h: 164px;
-  --gap: 8px;
+  /*
+   * Tamanho da carta — é o único ajuste da responsividade.
+   * A carta é "comprida" (proporção de carta de verdade) e a
+   * pilha empilha as enterradas com um deslocamento fixo.
+   */
+  --carta-w: 132px;
+  --carta-h: 244px;
+  --gap: 10px;
   --raio: 10px;
+  /* quanto cada carta enterrada sobe dentro da pilha */
+  --sobe: 34px;
 }
 
 * {
@@ -29,20 +35,20 @@ body {
 }
 
 #app {
-  max-width: 1720px;
+  max-width: 2000px;
   margin: 0 auto;
-  padding: 12px;
+  padding: 14px;
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 12px;
 }
 
 /* --- Layout em 3 colunas ---------------------------------------- */
 
 .layout {
   display: grid;
-  grid-template-columns: 210px minmax(0, 1fr) 250px;
-  gap: 10px;
+  grid-template-columns: 260px minmax(0, 1fr) 320px;
+  gap: 12px;
   align-items: start;
 }
 
@@ -195,23 +201,33 @@ body {
 
 /* --- Barra de fases ----------------------------------------- */
 
+/*
+ * O separador de fases fica ENTRE os dois campos (ver `centroPainel`),
+ * então ele é uma faixa larga que divide a mesa em dois.
+ */
 .fases {
   display: flex;
-  gap: 6px;
+  gap: 8px;
   justify-content: center;
-  background: var(--painel);
+  align-items: center;
+  flex-wrap: wrap;
+  background: linear-gradient(180deg, #1b1f29, #14171f);
   border: 1px solid var(--borda);
+  border-left: 3px solid var(--fase-ativa);
+  border-right: 3px solid var(--fase-ativa);
   border-radius: 10px;
-  padding: 8px;
+  padding: 10px 12px;
+  box-shadow: 0 6px 20px #0008;
 }
 
 .fase {
-  padding: 6px 14px;
+  padding: 7px 16px;
   border-radius: 6px;
-  font-size: 0.8rem;
+  font-size: 0.82rem;
   font-weight: 600;
   opacity: 0.45;
   border: 1px solid transparent;
+  white-space: nowrap;
 }
 
 .fase.ativa {
@@ -219,6 +235,17 @@ body {
   background: #10131a;
   border-color: var(--fase-ativa);
   color: var(--fase-ativa);
+  box-shadow: 0 0 14px #c8a24a55;
+}
+
+/* legenda de ajuda à direita das fases */
+.fase-legenda {
+  font-size: 0.72rem;
+  opacity: 0.6;
+  margin-left: 10px;
+  padding-left: 12px;
+  border-left: 1px solid var(--borda);
+  max-width: 100%;
 }
 
 /* --- Deck ---------------------------------------------------- */
@@ -307,6 +334,9 @@ body {
   grid-template-columns: repeat(5, var(--carta-w));
   gap: var(--gap);
   justify-content: center;
+  align-items: end;
+  /* espaço para o rótulo da pilha (P1..P5), que fica acima da caixa */
+  margin-top: 22px;
 }
 
 /*
@@ -321,6 +351,113 @@ body {
 
 .zonas.espelhado > .zona {
   direction: ltr;
+}
+
+/* --- Pilha ------------------------------------------------------------ */
+
+/*
+ * Uma zona do campo é uma PILHA. A caixa tem altura para a carta
+ * inteira mais o espaço que as cartas enterradas sobem, então a
+ * pilha inteira fica visível e clicável.
+ */
+.zona {
+  position: relative;
+  width: var(--carta-w);
+  /*
+   * A caixa cresce só o necessário: uma carta de altura, mais o
+   * espaço que as cartas enterradas sobem. `--altura-pilha` é
+   * escrita pela UI com o tamanho real da pilha, então pilhas
+   * vazias ficam compactas.
+   */
+  min-height: calc(var(--carta-h) + max(0, var(--altura-pilha, 1) - 1) * var(--sobe));
+  border: 1px dashed var(--borda);
+  border-radius: var(--raio);
+  background: linear-gradient(135deg, #12151c, #0d1015);
+  padding-bottom: 4px;
+}
+
+.zona.vazia {
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+}
+
+.pilha-vazia {
+  font-size: 0.7rem;
+  opacity: 0.35;
+  margin-bottom: 60px;
+}
+
+.pilha-marca {
+  position: absolute;
+  top: -18px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 0.62rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ouro);
+  opacity: 0.75;
+  white-space: nowrap;
+  z-index: 4;
+}
+
+/* zona destacada como destino da carta escolhida na mão */
+.zona.destino {
+  border-color: var(--ouro);
+  border-style: solid;
+  cursor: pointer;
+  background: linear-gradient(135deg, #241f10, #16120a);
+  animation: pulsar 1.4s ease-in-out infinite;
+}
+
+.zona.destino .pilha-vazia {
+  opacity: 0.9;
+  color: var(--ouro);
+}
+
+/* zona válida como alvo do ataque */
+.zona.alvo-valido {
+  border-color: var(--atk);
+  border-style: solid;
+  cursor: crosshair;
+}
+
+/* zona com a carta ativa selecionada/atacando */
+.zona.alvo-foco {
+  border-color: var(--ouro);
+}
+
+/*
+ * As cartas da pilha são empilhadas em `position: absolute`:
+ * a de baixo sobe menos, a de cima fica no canto inferior. O
+ * z-index cresce com a profundidade, então a ativa fica por cima.
+ */
+.zona > .carta {
+  position: absolute;
+  left: 0;
+  right: 0;
+  margin: 0 auto;
+  width: 100%;
+  height: var(--carta-h);
+  bottom: calc(4px + var(--prof) * var(--sobe));
+  z-index: calc(1 + var(--prof));
+}
+
+/* carta enterrada: recuada, apagada, mas ainda clicável */
+.carta.enterrada {
+  filter: brightness(0.62) saturate(0.75);
+  opacity: 0.9;
+}
+
+.carta.enterrada .carta-stats,
+.carta.enterrada .carta-nivel {
+  opacity: 0.5;
+}
+
+/* a carta ativa ganha um leve brilho para destacar na pilha */
+.carta:not(.enterrada) {
+  box-shadow: 0 6px 18px #000a;
 }
 
 /* --- Cartas (visual YGO: verticais) ---------------------------- */
@@ -362,25 +499,6 @@ body {
   z-index: 2;
 }
 
-/* moldura fina para as zonas vazias do campo */
-.zona {
-  width: var(--carta-w);
-  height: var(--carta-h);
-  border: 1px dashed var(--borda);
-  border-radius: var(--raio);
-  background:
-    linear-gradient(135deg, #12151c, #0d1015),
-    var(--painel);
-  display: flex;
-  align-items: stretch;
-  justify-content: stretch;
-}
-
-.zona .carta {
-  width: 100%;
-  height: 100%;
-}
-
 .carta-nome {
   font-weight: 700;
   font-size: 0.78rem;
@@ -415,11 +533,30 @@ body {
   display: flex;
   justify-content: space-between;
   border-top: 1px solid var(--borda);
-  padding-top: 4px;
+  padding-top: 6px;
+  gap: 6px;
 }
 
-.carta-stats b {
-  font-size: 0.75rem;
+/*
+ * ATK/DEF/EVA com CONTORNO PRETO para destacar sobre a arte da
+ * moldura. `-webkit-text-stroke` pinta o contorno; o `drop-shadow`
+ * duplica o texto 1px pra trás em preto, então funciona também
+ * onde o text-stroke não existe (Firefox antigo) e garante o
+ * contraste sobre qualquer fundo.
+ */
+.carta-stats b,
+.carta-stats b .num {
+  font-size: 0.9rem;
+  font-weight: 800;
+  -webkit-text-stroke: 1.5px #000;
+  paint-order: stroke fill;
+  filter: drop-shadow(1px 0 0 #000) drop-shadow(-1px 0 0 #000)
+          drop-shadow(0 1px 0 #000) drop-shadow(0 -1px 0 #000);
+}
+
+.carta-nivel {
+  -webkit-text-stroke: 1px #000;
+  paint-order: stroke fill;
 }
 
 .atk {
@@ -525,6 +662,68 @@ body {
   transform: translateY(-4px);
 }
 
+/* --- Seta de ataque (origem → destino, inclusive HP) ------------------ */
+
+/*
+ * Seta absoluta em `document.body`, posicionada pelo centro da
+ * carta atacante e apontando para o alvo (carta ou HP). A rotação
+ * e o comprimento vêm de `--angulo` / `--comprimento`, definidos
+ * pela UI a partir do `getBoundingClientRect` dos dois elementos.
+ */
+.seta-ataque {
+  position: fixed;
+  left: 0;
+  top: 0;
+  height: 6px;
+  width: var(--comprimento, 100px);
+  /*
+   * A origem da seta é o canto esquerdo (transform-origin 0 50%),
+   * e a UI já posiciona `left/top` no centro da carta atacante.
+   * Só a rotação entra aqui — um translate(-50%) deslocaria a
+   * seta para fora da tela, porque a largura é grande.
+   */
+  transform-origin: 0 50%;
+  transform: rotate(var(--angulo, 0deg));
+  pointer-events: none;
+  z-index: 90;
+  background: linear-gradient(90deg, #ffb457, #e0533d);
+  border-radius: 3px;
+  box-shadow: 0 0 12px #e0533dcc, 0 0 3px #000;
+  animation: seta-brilho 0.9s ease-in-out infinite;
+}
+
+/* ponta da seta */
+.seta-ataque::after {
+  content: '';
+  position: absolute;
+  right: -14px;
+  top: 50%;
+  transform: translateY(-50%);
+  border-left: 16px solid #e0533d;
+  border-top: 11px solid transparent;
+  border-bottom: 11px solid transparent;
+  filter: drop-shadow(0 0 6px #e0533dcc);
+}
+
+/* origem da seta */
+.seta-ataque::before {
+  content: '';
+  position: absolute;
+  left: -8px;
+  top: 50%;
+  width: 16px;
+  height: 16px;
+  transform: translateY(-50%);
+  border-radius: 50%;
+  background: radial-gradient(circle, #fff 20%, #ffb457 60%, transparent 70%);
+  box-shadow: 0 0 14px #ffb457;
+}
+
+@keyframes seta-brilho {
+  0%, 100% { opacity: 0.85; }
+  50% { opacity: 1; }
+}
+
 /* --- Animações de ataque ------------------------------------------- */
 
 .vulto {
@@ -613,28 +812,62 @@ body {
   padding: 20px 0;
 }
 
+/* carta ampliada, alta, com espaço para a arte */
 .carta.ampliada {
   width: 100%;
-  min-height: 300px;
-  padding: 20px 22px;
+  min-height: 400px;
+  padding: 26px 26px 20px;
+}
+
+.carta-arte {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 4.5rem;
+  opacity: 0.16;
+  padding: 12px 0;
+}
+
+/* tabela de atributos com contorno nos números */
+.detalhes-info {
+  margin: 10px 0 0;
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 3px 10px;
+  font-size: 0.75rem;
+}
+
+.detalhes-info dt {
+  opacity: 0.6;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-size: 0.68rem;
+  align-self: center;
+}
+
+.detalhes-info dd {
+  margin: 0;
+  color: var(--ouro);
+  font-weight: 700;
+  -webkit-text-stroke: 0.8px #000;
+  paint-order: stroke fill;
 }
 
 .carta.ampliada .carta-nome {
-  font-size: 0.95rem;
+  font-size: 1rem;
 }
 
-.carta-ampliada .carta-nivel {
-  font-size: 0.85rem;
-}
-
-.carta-ampliada .carta-stats b {
+.carta.ampliada .carta-nivel {
   font-size: 0.9rem;
 }
 
-.detalhes-info {
-  margin: 8px 0 0;
-  font-size: 0.75rem;
-  opacity: 0.6;
+.carta.ampliada .carta-desc {
+  font-size: 0.78rem;
+}
+
+.carta.ampliada .carta-stats b {
+  font-size: 1.05rem;
+  -webkit-text-stroke: 1.8px #000;
 }
 
 /* --- Admin ------------------------------------------------------- */
@@ -751,35 +984,48 @@ body {
 /* --- Responsivo ---------------------------------------------------- */
 
 /*
- * A responsividade é toda comandada por `--carta-w` / `--carta-h`:
- * a moldura, a zona do campo, o deck e a mão usam esses valores,
- * então basta trocar a variável em cada faixa.
+ * A responsividade é toda comandada por `--carta-w` / `--carta-h` /
+ * `--sobe`: a moldura, a pilha, o deck e a mão usam esses valores.
  *
- * Largura necessária para uma linha (deck + 5 zonas):
+ * Largura de uma linha (deck + 5 pilhas):
  *   deck + gap + 5 * carta-w + 4 * gap
  */
 
-/* Telas médias: cartas um pouco menores, colunas laterais encolhem. */
-@media (max-width: 1500px) {
+/* Telas médias: cartas menores, colunas laterais encolhem. */
+@media (max-width: 1700px) {
   :root {
-    --carta-w: 98px;
-    --carta-h: 146px;
+    --carta-w: 118px;
+    --carta-h: 218px;
+    --sobe: 30px;
   }
 
   .layout {
-    grid-template-columns: 190px minmax(0, 1fr) 220px;
+    grid-template-columns: 230px minmax(0, 1fr) 290px;
+  }
+}
+
+@media (max-width: 1500px) {
+  :root {
+    --carta-w: 108px;
+    --carta-h: 200px;
+    --sobe: 27px;
+  }
+
+  .layout {
+    grid-template-columns: 210px minmax(0, 1fr) 260px;
   }
 
   .carta.vertical {
-    padding: 10px 11px;
+    padding: 11px 12px;
   }
 }
 
 /* log e detalhes viram barras horizontais acima do jogo. */
-@media (max-width: 1150px) {
+@media (max-width: 1180px) {
   :root {
-    --carta-w: 92px;
-    --carta-h: 138px;
+    --carta-w: 104px;
+    --carta-h: 192px;
+    --sobe: 26px;
   }
 
   .layout {
@@ -792,13 +1038,13 @@ body {
   }
 
   .log ol {
-    max-height: 120px;
+    max-height: 130px;
   }
 
   .detalhes {
     display: grid;
-    grid-template-columns: 150px minmax(0, 1fr);
-    gap: 10px;
+    grid-template-columns: 210px minmax(0, 1fr);
+    gap: 12px;
     align-items: start;
   }
 
@@ -808,16 +1054,17 @@ body {
   }
 
   .carta.ampliada {
-    min-height: 210px;
+    min-height: 280px;
   }
 }
 
 /* Celular: carta menor, HUD e fases compactos. */
-@media (max-width: 620px) {
+@media (max-width: 700px) {
   :root {
-    --carta-w: 82px;
-    --carta-h: 122px;
-    --gap: 6px;
+    --carta-w: 92px;
+    --carta-h: 170px;
+    --sobe: 23px;
+    --gap: 7px;
   }
 
   #app {
@@ -835,13 +1082,13 @@ body {
     justify-content: center;
   }
 
-  .fases {
-    flex-wrap: wrap;
-  }
-
   .fase {
     padding: 4px 8px;
     font-size: 0.72rem;
+  }
+
+  .fase-legenda {
+    display: none;
   }
 
   .detalhes {
@@ -849,18 +1096,19 @@ body {
   }
 
   .log ol {
-    max-height: 96px;
+    max-height: 100px;
   }
 }
 
 /*
- * Telas muito estreitas: o deck não cabe mais ao lado das 5 zonas,
+ * Telas muito estreitas: o deck não cabe mais ao lado das 5 pilhas,
  * então ele sobe para cima do próprio campo.
  */
-@media (max-width: 520px) {
+@media (max-width: 560px) {
   :root {
-    --carta-w: 74px;
-    --carta-h: 110px;
+    --carta-w: 84px;
+    --carta-h: 156px;
+    --sobe: 20px;
   }
 
   .lado {

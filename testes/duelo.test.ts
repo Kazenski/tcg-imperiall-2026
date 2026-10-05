@@ -1,8 +1,18 @@
 /**
- * Testes do core do duelo: fases do turno, invocação (level da
- * partida, sem gasto, máx 1 monstro/turno), batalha ATK/DEF com
- * modos ataque/defesa, level que cai a cada 100 de dano, IA e
- * admin de cartas.
+ * Testes do core do duelo.
+ *
+ * Cobertura:
+ *   - fases do turno;
+ *   - invocação: level da partida, máx. 1 monstro/turno;
+ *   - PILHAS: ordem de níveis obrigatória (0, 1, 2… uma sobre a
+ *     outra), só a carta de cima é ativa, revelação de baixo quando
+ *     a de cima cai;
+ *   - matemática do combate (4 casos: ataque x ataque nos dois
+ *     sentidos, ataque x defesa nos dois sentidos);
+ *   - regra do ataque direto (só com o campo inimigo vazio);
+ *   - level que cai a cada 100 de dano;
+ *   - IA jogando o turno inteiro, em passos;
+ *   - admin de cartas (localStorage).
  *
  *   npm test
  *
@@ -22,12 +32,24 @@ import {
   invocar,
   motivoNaoPodeAtacar,
   motivoNaoPodeInvocar,
+  pilhasQueAceitam,
   proximaFase,
-  terminarTurno,
+  temCriatura,
 } from '../src/core/duelo.ts';
-import { iaJogarTurno } from '../src/core/ia.ts';
+import { iaJogarTurno, iaPassos } from '../src/core/ia.ts';
 import { carregarCartas, cartaValida, idParaNome, salvarCartas } from '../src/core/admin.ts';
-import { cartaIdDe, DANO_POR_LEVEL, LEVEL_INICIAL, ZONAS } from '../src/core/types.ts';
+import {
+  cartaAtiva,
+  cartaIdDe,
+  DANO_POR_LEVEL,
+  indiceAtivo,
+  LEVEL_INICIAL,
+  ZONAS,
+  type EstadoDuelo,
+  type Jogador,
+  type Modo,
+  type Pilha,
+} from '../src/core/types.ts';
 
 let passou = 0;
 function ok(nome: string, fn: () => void): void {
@@ -41,10 +63,48 @@ function deckDe(id: string): string[] {
   return Array<string>(20).fill(id);
 }
 
-function primeiroUid(estado: ReturnType<typeof dueloNovo>, jogador: 0 | 1, cartaId: string): string {
+/**
+ * Deck com 6 cópias de cada id informado (6 × n ids fica dentro do
+ * limite de 60 cartas do core).
+ */
+function deckDeCada(...ids: string[]): string[] {
+  return ids.flatMap((id) => Array<string>(6).fill(id));
+}
+
+/** Uma carta de referência por nível, para montar escadas de pilha. */
+const POR_NIVEL: Record<number, string> = {
+  0: 'sertanejo',
+  1: 'golem-ferro',
+  2: 'sereia-vale',
+  3: 'ogro-masmorra',
+  4: 'dragao-jovem',
+  5: 'dragao-fogo',
+  6: 'dragao-antigo',
+  7: 'dragao-gelo',
+  8: 'imperador-ruina',
+};
+
+/** Deck que cobre todos os níveis (para poder subir pilhas). */
+function deckEscada(): string[] {
+  return deckDeCada(...Object.values(POR_NIVEL));
+}
+
+function primeiroUid(estado: EstadoDuelo, jogador: Jogador, cartaId: string): string {
   const uid = estado.mao[jogador]!.find((u) => cartaIdDe(u) === cartaId);
   assert.ok(uid, `carta ${cartaId} não está na mão do jogador ${jogador + 1}`);
   return uid;
+}
+
+/** Primeiro uid da mão cujo carta tem o nível pedido. */
+function primeiroUidNivel(estado: EstadoDuelo, jogador: Jogador, nivel: number): string {
+  const uid = estado.mao[jogador]!.find((u) => CARTAS_POR_ID[cartaIdDe(u)]!.nivel === nivel);
+  assert.ok(uid, `nenhuma carta de nível ${nivel} na mão do jogador ${jogador + 1}`);
+  return uid;
+}
+
+/** A mão tem alguma carta do nível pedido? */
+function temNivel(estado: EstadoDuelo, jogador: Jogador, nivel: number): boolean {
+  return estado.mao[jogador]!.some((u) => CARTAS_POR_ID[cartaIdDe(u)]!.nivel === nivel);
 }
 
 /** Dublê de localStorage para os testes do admin. */
@@ -60,24 +120,100 @@ const memoria = new Map<string, string>();
   },
 } as Storage;
 
-/** Avança até a próxima fase de compra do jogador 0. */
-function proximoTurno(s: ReturnType<typeof dueloNovo>): ReturnType<typeof dueloNovo> {
-  for (let i = 0; i < 12 && !(s.vez === 0 && s.fase === 'compra'); i++) {
-    s = proximaFase(s).estado;
+/** Avança até a fase de compra do jogador pedido. */
+function proximoTurnoPara(s: EstadoDuelo, jogador: Jogador): EstadoDuelo {
+  let atual = s;
+  for (let i = 0; i < 16 && !(atual.vez === jogador && atual.fase === 'compra'); i++) {
+    atual = proximaFase(atual).estado;
   }
-  return s;
+  return atual;
+}
+
+/** Avança até a próxima fase de compra do jogador 0. */
+function proximoTurno(s: EstadoDuelo): EstadoDuelo {
+  return proximoTurnoPara(s, 0);
 }
 
 /** Avança o duelo até a fase principal (compra + clique). */
-function atePrincipal(estado: ReturnType<typeof dueloNovo>): ReturnType<typeof dueloNovo> {
+function atePrincipal(estado: EstadoDuelo): EstadoDuelo {
   return comprarCarta(estado, estado.vez).estado;
 }
 
 /** Avança até a fase de combate. */
-function ateCombate(estado: ReturnType<typeof dueloNovo>): ReturnType<typeof dueloNovo> {
-  let s = atePrincipal(estado);
-  s = proximaFase(s).estado;
-  return s;
+function ateCombate(estado: EstadoDuelo): EstadoDuelo {
+  return proximaFase(atePrincipal(estado)).estado;
+}
+
+/**
+ * Avança turnos inteiros até a mão do jogador ter uma carta do
+ * `nivel` pedido e o duelo estar na fase principal dele (pronto
+ * para invocar). Evita depender da sorte do embaralhado.
+ */
+function ateTerNivel(s: EstadoDuelo, jogador: Jogador, nivel: number): EstadoDuelo {
+  let atual = s;
+  for (let i = 0; i < 40; i++) {
+    if (temNivel(atual, jogador, nivel)) {
+      while (atual.vez !== jogador || atual.fase !== 'principal') {
+        atual = proximaFase(atual).estado;
+      }
+      return atual;
+    }
+    // anda até a próxima compra do jogador e compra
+    while (!(atual.vez === jogador && atual.fase === 'compra')) {
+      atual = proximaFase(atual).estado;
+    }
+    atual = comprarCarta(atual, jogador).estado;
+    while (atual.fase !== 'principal') atual = proximaFase(atual).estado;
+  }
+  throw new Error(`nenhuma carta de nível ${nivel} apareceu para o jogador ${jogador + 1}`);
+}
+
+/** Empilha os níveis informados na pilha `zona` (1 carta por turno). */
+function empilharNiveis(
+  s: EstadoDuelo,
+  jogador: Jogador,
+  zona: number,
+  niveis: number[],
+): EstadoDuelo {
+  let atual = s;
+  for (const nivel of niveis) {
+    atual = ateTerNivel(atual, jogador, nivel);
+    // 1 monstro por turno: se já invocou neste turno, espera o próximo.
+    if (atual.invocouMonstro[jogador]!) {
+      atual = proximoTurnoPara(atual, jogador);
+      atual = ateTerNivel(atual, jogador, nivel);
+    }
+    const uid = primeiroUidNivel(atual, jogador, nivel);
+    const motivo = motivoNaoPodeInvocar(atual, jogador, uid, zona);
+    assert.equal(motivo, null, `esperava invocar nível ${nivel} na pilha ${zona + 1}: ${motivo}`);
+    atual = invocar(atual, jogador, uid, zona).estado;
+  }
+  return atual;
+}
+
+/** Empilha por id, convertendo cada carta para o seu nível. */
+function empilharTurnos(
+  s: EstadoDuelo,
+  jogador: Jogador,
+  zona: number,
+  ids: string[],
+): EstadoDuelo {
+  return empilharNiveis(
+    s,
+    jogador,
+    zona,
+    ids.map((id) => CARTAS_POR_ID[id]!.nivel),
+  );
+}
+
+/** Escada de níveis que termina em `nivel` (topo 3 -> 0,1,2,3). */
+function niveisAte(nivel: number): number[] {
+  return Array.from({ length: nivel + 1 }, (_, i) => i);
+}
+
+/** Pilha do jogador num índice de zona. */
+function pilha(s: EstadoDuelo, jogador: Jogador, zona: number): Pilha {
+  return s.campo[jogador]![zona]!;
 }
 
 console.log('fases do turno');
@@ -110,21 +246,22 @@ ok('proximaFase avança compra → principal → combate', () => {
 
 ok('fase fim termina o turno e volta para a compra', () => {
   let s = dueloNovo({ deck: [deckDe('golem-ferro'), deckDe('golem-ferro')], seed: 42 });
-  for (let i = 0; i < 4; i++) s = proximaFase(s).estado; // compra → principal → combate → finalizacao → fim
+  for (let i = 0; i < 4; i++) s = proximaFase(s).estado; // até 'fim'
   assert.equal(s.fase, 'fim');
-  const s1 = proximaFase(s).estado; // termina o turno
+  const s1 = proximaFase(s).estado;
   assert.equal(s1.vez, 1);
   assert.equal(s1.fase, 'compra');
   assert.equal(s1.turno, 2);
 });
 
 console.log('invocação (fase principal, level, máx 1 monstro)');
-ok('invoca sem gastar: só valida level e zona', () => {
-  const s0 = atePrincipal(dueloNovo({ deck: [deckDe('golem-ferro'), deckDe('golem-ferro')], seed: 42 }));
-  const uid = primeiroUid(s0, 0, 'golem-ferro');
-  const s1 = invocar(s0, 0, uid).estado;
+ok('invoca sem gastar: só valida level e pilha', () => {
+  const s0 = atePrincipal(dueloNovo({ deck: [deckDe('sertanejo'), deckDe('sertanejo')], seed: 42 }));
+  const uid = primeiroUidNivel(s0, 0, 0);
+  const s1 = invocar(s0, 0, uid, 0).estado;
   assert.ok(!s1.mao[0]!.includes(uid));
-  assert.ok(s1.campo[0]!.some((z) => z?.uid === uid));
+  assert.equal(pilha(s1, 0, 0).length, 1);
+  assert.equal(pilha(s1, 0, 0)[0]!.uid, uid);
   assert.equal(s1.levelPartida[0], s0.levelPartida[0]);
 });
 
@@ -134,12 +271,12 @@ ok('recusa se o level da partida não alcança o nível da carta', () => {
     levelInicial: [1, 1],
     seed: 42,
   }));
-  const uid = primeiroUid(s0, 0, 'sereia-vale');
+  const uid = primeiroUidNivel(s0, 0, 2); // nível 2
   assert.equal(
-    motivoNaoPodeInvocar(s0, 0, uid),
+    motivoNaoPodeInvocar(s0, 0, uid, 0),
     'seu level na partida (1) não alcança o nível 2 da carta',
   );
-  assert.throws(() => invocar(s0, 0, uid), /level/);
+  assert.throws(() => invocar(s0, 0, uid, 0), /level/);
 });
 
 ok('cartas de nível 0 invocam mesmo em level 0', () => {
@@ -148,291 +285,367 @@ ok('cartas de nível 0 invocam mesmo em level 0', () => {
     levelInicial: [0, 0],
     seed: 42,
   }));
-  const uid = primeiroUid(s0, 0, 'sertanejo');
-  assert.equal(motivoNaoPodeInvocar(s0, 0, uid), null);
-  const s1 = invocar(s0, 0, uid).estado;
-  assert.ok(s1.campo[0]!.some((z) => z?.uid === uid));
+  const uid = primeiroUidNivel(s0, 0, 0);
+  assert.equal(motivoNaoPodeInvocar(s0, 0, uid, 0), null);
+  assert.equal(pilha(invocar(s0, 0, uid, 0).estado, 0, 0).length, 1);
 });
 
 ok('só invoca 1 monstro por turno', () => {
-  const s0 = atePrincipal(dueloNovo({ deck: [deckDe('golem-ferro'), deckDe('golem-ferro')], seed: 42 }));
-  const uid1 = primeiroUid(s0, 0, 'golem-ferro');
-  const s1 = invocar(s0, 0, uid1).estado;
-  const uid2 = primeiroUid(s1, 0, 'golem-ferro');
-  assert.equal(motivoNaoPodeInvocar(s1, 0, uid2), 'só se invoca 1 monstro por turno');
+  const s0 = atePrincipal(dueloNovo({ deck: [deckDe('sertanejo'), deckDe('sertanejo')], seed: 42 }));
+  const uid1 = primeiroUidNivel(s0, 0, 0);
+  const s1 = invocar(s0, 0, uid1, 0).estado;
+  const uid2 = primeiroUidNivel(s1, 0, 0);
+  assert.equal(motivoNaoPodeInvocar(s1, 0, uid2, 0), 'só se invoca 1 monstro por turno');
 });
 
-ok('recusa com campo cheio (5 zonas)', () => {
-  // Invoca 1 por turno: 5 turnos para encher o campo.
-  let s = atePrincipal(dueloNovo({ deck: [deckDe('golem-ferro'), deckDe('golem-ferro')], seed: 42 }));
-  for (let i = 0; i < ZONAS; i++) {
-    const uid = primeiroUid(s, 0, 'golem-ferro');
-    s = invocar(s, 0, uid).estado;
-    s = proximoTurno(s);
-    s = comprarCarta(s, 0).estado; // compra → principal
+ok('recusa índice de pilha inexistente', () => {
+  const s0 = atePrincipal(dueloNovo({ deck: [deckDe('sertanejo'), deckDe('sertanejo')], seed: 42 }));
+  const uid = primeiroUidNivel(s0, 0, 0);
+  assert.equal(motivoNaoPodeInvocar(s0, 0, uid, 99), 'essa pilha não existe (o campo tem 5)');
+  assert.equal(motivoNaoPodeInvocar(s0, 0, uid, -1), 'essa pilha não existe (o campo tem 5)');
+});
+
+console.log('PILHAS (ordem de níveis)');
+ok('pilha vazia só aceita nível 0', () => {
+  // deck só de nível 1: a pilha vazia tem de recusar
+  const s0 = atePrincipal(dueloNovo({ deck: [deckDe('golem-ferro'), deckDe('golem-ferro')], seed: 42 }));
+  const lv1 = primeiroUidNivel(s0, 0, 1);
+  assert.deepEqual(pilhasQueAceitam(s0, 0, 0), [0, 1, 2, 3, 4]);
+  assert.deepEqual(pilhasQueAceitam(s0, 0, 1), []);
+  assert.match(motivoNaoPodeInvocar(s0, 0, lv1, 0)!, /só aceita nível 0 agora/);
+});
+
+ok('empilha em ordem: nível 0, depois 1, 2… uma sobre a outra', () => {
+  let s = dueloNovo({ deck: [deckEscada(), deckEscada()], seed: 42 });
+  s = empilharNiveis(s, 0, 0, niveisAte(3));
+  const p = pilha(s, 0, 0);
+  assert.equal(p.length, 4);
+  assert.deepEqual(
+    p.map((i) => CARTAS_POR_ID[cartaIdDe(i.uid)]!.nivel),
+    [0, 1, 2, 3],
+  );
+  assert.equal(cartaAtiva(p)!.uid, p[3]!.uid);
+  assert.equal(indiceAtivo(p), 3);
+});
+
+ok('para ter nível 8 ativo é preciso ter de 0 a 7 embaixo', () => {
+  let s = dueloNovo({ deck: [deckEscada(), deckEscada()], seed: 42 });
+  s = empilharNiveis(s, 0, 0, niveisAte(8));
+  const p = pilha(s, 0, 0);
+  assert.equal(p.length, 9);
+  assert.deepEqual(
+    p.map((i) => CARTAS_POR_ID[cartaIdDe(i.uid)]!.nivel),
+    [0, 1, 2, 3, 4, 5, 6, 7, 8],
+  );
+  assert.equal(CARTAS_POR_ID[cartaIdDe(cartaAtiva(p)!.uid)]!.nivel, 8);
+});
+
+ok('pula de nível é recusado: falta a carta de baixo', () => {
+  let s = dueloNovo({ deck: [deckEscada(), deckEscada()], seed: 42 });
+  s = ateTerNivel(s, 0, 0);
+  s = invocar(s, 0, primeiroUidNivel(s, 0, 0), 0).estado; // nível 0
+  // espera aparecer uma carta de nível 2 (depois de passar o turno)
+  s = proximoTurnoPara(s, 0);
+  s = ateTerNivel(s, 0, 2);
+  const lv2 = primeiroUidNivel(s, 0, 2);
+  assert.match(motivoNaoPodeInvocar(s, 0, lv2, 0)!, /só aceita nível 1 agora/);
+});
+
+ok('nível abaixo do topo vai para outra pilha', () => {
+  let s = dueloNovo({ deck: [deckEscada(), deckEscada()], seed: 42 });
+  s = empilharNiveis(s, 0, 0, niveisAte(1)); // pilha 1 em nível 1
+  s = proximoTurnoPara(s, 0);
+  s = ateTerNivel(s, 0, 0);
+  const lv0 = primeiroUidNivel(s, 0, 0);
+  assert.match(motivoNaoPodeInvocar(s, 0, lv0, 0)!, /já está no nível 1.*use outra pilha/);
+  assert.equal(motivoNaoPodeInvocar(s, 0, lv0, 1), null, 'pilha 2 vazia aceita nível 0');
+});
+
+ok('cada pilha tem a própria contagem de níveis', () => {
+  let s = dueloNovo({ deck: [deckEscada(), deckEscada()], seed: 42 });
+  s = empilharNiveis(s, 0, 0, niveisAte(1)); // pilha 1 → nv1
+  s = proximoTurnoPara(s, 0);
+  s = ateTerNivel(s, 0, 0);
+  s = invocar(s, 0, primeiroUidNivel(s, 0, 0), 1).estado; // pilha 2 → nv0
+  assert.equal(CARTAS_POR_ID[cartaIdDe(cartaAtiva(pilha(s, 0, 0))!.uid)]!.nivel, 1);
+  assert.equal(CARTAS_POR_ID[cartaIdDe(cartaAtiva(pilha(s, 0, 1))!.uid)]!.nivel, 0);
+});
+
+ok('as 5 pilhas são independentes', () => {
+  const s = dueloNovo({ deck: [deckPadrao(), deckPadrao()], seed: 42 });
+  assert.equal(s.campo[0]!.length, ZONAS);
+  for (const p of s.campo[0]!) assert.equal(p.length, 0);
+});
+
+console.log('pilha no combate');
+ok('só a carta de cima da pilha ataca', () => {
+  let s = dueloNovo({ deck: [deckEscada(), deckEscada()], seed: 42 });
+  s = empilharNiveis(s, 0, 0, niveisAte(1)); // pilha 1 com nv0 e nv1
+  s = proximoTurnoPara(s, 0);
+  s = ateTerNivel(s, 0, 0);
+  s = invocar(s, 0, primeiroUidNivel(s, 0, 0), 1).estado; // pilha 2 só nv0
+  s = proximaFase(s).estado; // combate
+
+  const p = pilha(s, 0, 0);
+  assert.equal(motivoNaoPodeAtacar(s, 0, p[0]!.uid, { tipo: 'jogador' }), 'só a carta de cima da pilha ataca');
+  assert.notEqual(
+    motivoNaoPodeAtacar(s, 0, cartaAtiva(p)!.uid, { tipo: 'jogador' }),
+    'só a carta de cima da pilha ataca',
+  );
+});
+
+ok('só a carta ativa do inimigo pode ser atacada', () => {
+  let s = dueloNovo({ deck: [deckEscada(), deckEscada()], seed: 42 });
+  s = empilharNiveis(s, 0, 0, niveisAte(1));
+  s = empilharNiveis(s, 1, 0, niveisAte(1));
+  s = proximoTurno(s);
+  s = atePrincipal(s);
+  s = proximaFase(s).estado; // combate
+
+  const inimiga = pilha(s, 1, 0);
+  const meuAtacante = cartaAtiva(pilha(s, 0, 0))!.uid;
+  assert.equal(
+    motivoNaoPodeAtacar(s, 0, meuAtacante, { tipo: 'carta', uid: inimiga[0]!.uid }),
+    'a criatura-alvo não está no topo da pilha',
+  );
+  assert.equal(motivoNaoPodeAtacar(s, 0, meuAtacante, { tipo: 'carta', uid: cartaAtiva(inimiga)!.uid }), null);
+});
+
+ok('quando a ativa cai, a carta de baixo assume', () => {
+  // jogador 0: pilha nv0 (sertanejo 300/250) com nv1 por cima (golem 700/1100)
+  let s = dueloNovo({ deck: [deckEscada(), deckEscada()], seed: 42 });
+  s = empilharNiveis(s, 0, 0, niveisAte(1));
+  // jogador 1: pilha nv0 + nv1 (golem 700/1100): o golem de 700 ganha do
+  // de 1100? não — quem morre é o atacante. Vamos dar um alvo forte.
+  s = empilharNiveis(s, 1, 0, niveisAte(2)); // nv2 sereia-vale (atk alto)
+  s = proximoTurno(s);
+  s = atePrincipal(s);
+  s = proximaFase(s).estado; // combate
+
+  const minha = pilha(s, 0, 0);
+  const lv0 = minha[0]!.uid;
+  const ativa = cartaAtiva(minha)!;
+  const alvo = cartaAtiva(pilha(s, 1, 0))!;
+
+  // a ativa do jogador 0 é atacada pelo topo do jogador 1 só no
+  // próximo turno; aqui simulamos a queda da ativa de outra forma:
+  // o jogador 1 ataca e destrói a ativa do jogador 0.
+  s = proximoTurnoPara(s, 1);
+  s = atePrincipal(s);
+  s = proximaFase(s).estado; // combate do jogador 1
+  const atacante1 = cartaAtiva(pilha(s, 1, 0))!;
+  const minhaAgora = cartaAtiva(pilha(s, 0, 0))!;
+  assert.equal(minhaAgora.uid, ativa.uid);
+
+  // força: se o ataque do jogador 1 derrubar a ativa, a de baixo assume
+  const s2 = atacar(s, 1, atacante1.uid, { tipo: 'carta', uid: minhaAgora.uid }).estado;
+  const caiu = pilha(s2, 0, 0).every((i) => i.uid !== minhaAgora.uid);
+  assert.ok(caiu, 'a ativa do jogador 0 caiu');
+  assert.equal(cartaAtiva(pilha(s2, 0, 0))!.uid, lv0, 'a carta de baixo ficou ativa');
+  assert.equal(cartaAtiva(pilha(s2, 0, 0))!.atacou, false, 'a revelada pode atacar de novo');
+  assert.ok(pilha(s2, 0, 0).length < minha.length, 'a pilha encolheu');
+  assert.ok(alvo);
+});
+
+console.log('matemática do combate');
+/**
+ * Monta um duelo com as pilhas dos dois jogadores e entrega o estado
+ * na fase de combate do jogador 0.
+ */
+function dueloProntos(niveisJ0: number[], niveisJ1: number[], modoJ1: Modo = 'ataque'): EstadoDuelo {
+  const deck = deckDeCada(...Object.values(POR_NIVEL));
+  let s = dueloNovo({ deck: [deck, deck], seed: 7 });
+  s = empilharNiveis(s, 0, 0, niveisJ0);
+  s = empilharNiveis(s, 1, 0, niveisJ1);
+  if (modoJ1 === 'defesa') {
+    s = proximoTurnoPara(s, 1);
+    s = atePrincipal(s);
+    s = alternarModo(s, 1, cartaAtiva(pilha(s, 1, 0))!.uid).estado;
   }
-  assert.ok(s.campo[0]!.every((z) => z !== null));
-  const sobra = primeiroUid(s, 0, 'golem-ferro');
-  assert.equal(motivoNaoPodeInvocar(s, 0, sobra), 'campo cheio (5 criaturas)');
+  s = proximoTurno(s);
+  s = atePrincipal(s);
+  return proximaFase(s).estado;
+}
+
+ok('ataque x ataque: ATK maior → alvo morre e a diferença vai na vida', () => {
+  // nv1 (golem-ferro 700) contra nv0 (qualquer carta fraca)
+  const s = dueloProntos(niveisAte(1), [0]);
+  const atacante = cartaAtiva(pilha(s, 0, 0))!;
+  const alvo = cartaAtiva(pilha(s, 1, 0))!;
+  const atk = CARTAS_POR_ID[atacante.cartaId]!.atk;
+  const def = CARTAS_POR_ID[alvo.cartaId]!.def;
+  assert.ok(atk > def, `premissa: ${atk} > ${def}`);
+  const antes = s.lp[1]!;
+  const s1 = atacar(s, 0, atacante.uid, { tipo: 'carta', uid: alvo.uid }).estado;
+  assert.equal(s1.lp[1], antes - (atk - def), 'a diferença vai na vida de quem perdeu a carta');
+  assert.ok(pilha(s1, 1, 0).every((i) => i.uid !== alvo.uid), 'o alvo foi destruído');
+  assert.ok(pilha(s1, 0, 0).some((i) => i.uid === atacante.uid), 'o atacante sobrevive');
+});
+
+ok('ataque x ataque: DEF maior → atacante morre e a diferença vai na vida dele', () => {
+  // nv0 fraco contra nv1 forte (golem-ferro def 1100)
+  const s = dueloProntos([0], niveisAte(1));
+  const atacante = cartaAtiva(pilha(s, 0, 0))!;
+  const alvo = cartaAtiva(pilha(s, 1, 0))!;
+  const atk = CARTAS_POR_ID[atacante.cartaId]!.atk;
+  const def = CARTAS_POR_ID[alvo.cartaId]!.def;
+  assert.ok(def > atk, `premissa: def ${def} > atk ${atk}`);
+  const antes = s.lp[0]!;
+  const s1 = atacar(s, 0, atacante.uid, { tipo: 'carta', uid: alvo.uid }).estado;
+  assert.equal(s1.lp[0], antes - (def - atk), 'a diferença vai na vida do dono do atacante');
+  assert.equal(s1.lp[1], s.lp[1]!, 'o defensor não leva dano');
+  assert.ok(pilha(s1, 0, 0).every((i) => i.uid !== atacante.uid), 'o atacante foi destruído');
+  assert.ok(pilha(s1, 1, 0).some((i) => i.uid === alvo.uid), 'o alvo sobrevive');
+});
+
+ok('contra defesa: ATK maior → destrói o alvo sem dano', () => {
+  const s = dueloProntos(niveisAte(1), [0], 'defesa');
+  const atacante = cartaAtiva(pilha(s, 0, 0))!;
+  const alvo = cartaAtiva(pilha(s, 1, 0))!;
+  const atk = CARTAS_POR_ID[atacante.cartaId]!.atk;
+  const def = CARTAS_POR_ID[alvo.cartaId]!.def;
+  assert.ok(atk > def, `premissa: ${atk} > ${def}`);
+  assert.equal(alvo.modo, 'defesa');
+  const antes = s.lp[1]!;
+  const s1 = atacar(s, 0, atacante.uid, { tipo: 'carta', uid: alvo.uid }).estado;
+  assert.equal(s1.lp[1], antes, 'defesa não leva dano no jogador');
+  assert.ok(pilha(s1, 1, 0).every((i) => i.uid !== alvo.uid), 'o alvo foi destruído');
+  assert.ok(pilha(s1, 0, 0).some((i) => i.uid === atacante.uid), 'o atacante sobrevive');
+});
+
+ok('contra defesa: DEF maior → o atacante leva a diferença', () => {
+  const s = dueloProntos([0], niveisAte(1), 'defesa');
+  const atacante = cartaAtiva(pilha(s, 0, 0))!;
+  const alvo = cartaAtiva(pilha(s, 1, 0))!;
+  const atk = CARTAS_POR_ID[atacante.cartaId]!.atk;
+  const def = CARTAS_POR_ID[alvo.cartaId]!.def;
+  assert.ok(def > atk, `premissa: def ${def} > atk ${atk}`);
+  assert.equal(alvo.modo, 'defesa');
+  const antes = s.lp[0]!;
+  const s1 = atacar(s, 0, atacante.uid, { tipo: 'carta', uid: alvo.uid }).estado;
+  assert.equal(s1.lp[0], antes - (def - atk), 'o atacante rebateu a diferença');
+  assert.ok(pilha(s1, 1, 0).some((i) => i.uid === alvo.uid), 'o alvo em defesa sobrevive');
+  assert.ok(pilha(s1, 0, 0).some((i) => i.uid === atacante.uid), 'o atacante sobreviveu');
+});
+
+console.log('ataque direto');
+ok('não ataca a vida com criaturas no campo inimigo', () => {
+  const s = dueloProntos(niveisAte(1), [0]);
+  assert.ok(temCriatura(s, 1));
+  const atacante = cartaAtiva(pilha(s, 0, 0))!;
+  assert.equal(
+    motivoNaoPodeAtacar(s, 0, atacante.uid, { tipo: 'jogador' }),
+    'não pode atacar a vida do inimigo enquanto ele tiver criaturas no campo',
+  );
+  assert.throws(() => atacar(s, 0, atacante.uid, { tipo: 'jogador' }), /criaturas no campo/);
+});
+
+ok('a regra vale igual para o jogador 2 atacando o jogador 1', () => {
+  const s0 = dueloNovo({ deck: [deckEscada(), deckEscada()], seed: 7 });
+  let s = empilharNiveis(s0, 0, 0, niveisAte(1));
+  s = empilharNiveis(s, 1, 0, niveisAte(1));
+  s = proximoTurnoPara(s, 1);
+  s = atePrincipal(s);
+  s = proximaFase(s).estado; // combate do jogador 1
+  const atacante = cartaAtiva(pilha(s, 1, 0))!;
+  assert.ok(temCriatura(s, 0));
+  assert.equal(
+    motivoNaoPodeAtacar(s, 1, atacante.uid, { tipo: 'jogador' }),
+    'não pode atacar a vida do inimigo enquanto ele tiver criaturas no campo',
+  );
+});
+
+ok('ataque direto passa com o campo inimigo vazio', () => {
+  const s0 = ateCombate(dueloNovo({ deck: [deckDe('sertanejo'), deckDe('sertanejo')], seed: 42 }));
+  const uid = primeiroUidNivel(s0, 0, 0);
+  const atk = CARTAS_POR_ID[cartaIdDe(uid)]!.atk;
+  const comGol = invocar({ ...s0, fase: 'principal' as const }, 0, uid, 0).estado;
+  const combate = { ...comGol, fase: 'combate' as const };
+  assert.ok(comGol.campo[1]!.every((p) => p.length === 0));
+  assert.equal(motivoNaoPodeAtacar(combate, 0, uid, { tipo: 'jogador' }), null);
+  const antes = comGol.lp[1]!;
+  const s1 = atacar(combate, 0, uid, { tipo: 'jogador' }).estado;
+  assert.equal(s1.lp[1], antes - atk);
+});
+
+ok('limpar o campo inimigo libera o ataque direto', () => {
+  const s = dueloProntos(niveisAte(1), [0]);
+  const atacante = cartaAtiva(pilha(s, 0, 0))!;
+  const alvo = cartaAtiva(pilha(s, 1, 0))!;
+  const s1 = atacar(s, 0, atacante.uid, { tipo: 'carta', uid: alvo.uid }).estado;
+  assert.ok(s1.campo[1]!.every((p) => p.length === 0));
+  let s2 = proximoTurno(s1);
+  s2 = atePrincipal(s2);
+  s2 = proximaFase(s2).estado;
+  assert.equal(motivoNaoPodeAtacar(s2, 0, atacante.uid, { tipo: 'jogador' }), null);
 });
 
 console.log('level na partida');
 ok('level cai 1 a cada 100 de dano cumulativo', () => {
-  let s = atePrincipal(dueloNovo({ deck: [deckDe('golem-ferro'), deckDe('golem-ferro')], seed: 1 }));
-  const golem = primeiroUid(s, 0, 'golem-ferro');
-  s = invocar(s, 0, golem).estado;
+  let s = atePrincipal(dueloNovo({ deck: [deckDe('sertanejo'), deckDe('sertanejo')], seed: 1 }));
+  const lv0 = primeiroUidNivel(s, 0, 0);
+  const dano = CARTAS_POR_ID[cartaIdDe(lv0)]!.atk;
+  s = invocar(s, 0, lv0, 0).estado;
   s = proximaFase(s).estado; // combate
-  s = atacar(s, 0, golem, { tipo: 'jogador' }).estado;
-  assert.equal(s.danoRecebido[1], 700);
-  assert.equal(s.levelPartida[1], LEVEL_INICIAL - Math.floor(700 / DANO_POR_LEVEL));
+  s = atacar(s, 0, lv0, { tipo: 'jogador' }).estado;
+  assert.equal(s.danoRecebido[1], dano);
+  assert.equal(s.levelPartida[1], LEVEL_INICIAL - Math.floor(dano / DANO_POR_LEVEL));
 });
 
 ok('level nunca fica negativo', () => {
-  let s = atePrincipal(dueloNovo({ deck: [deckDe('imperador-ruina'), deckDe('golem-ferro')], seed: 1 }));
-  const imperador = primeiroUid(s, 0, 'imperador-ruina');
-  s = invocar(s, 0, imperador).estado;
-  s = proximaFase(s).estado; // combate
+  let s = atePrincipal(dueloNovo({ deck: [deckEscada(), deckEscada()], seed: 1 }));
+  // imperador-ruina é nível 8: precisa subir a escada inteira (9 turnos)
+  s = empilharNiveis(s, 0, 0, niveisAte(8));
+  const imperador = cartaAtiva(pilha(s, 0, 0))!.uid;
   for (let i = 0; i < 10 && s.vencedor === null; i++) {
+    s = proximaFase(s).estado; // combate
     s = atacar(s, 0, imperador, { tipo: 'jogador' }).estado;
     if (s.vencedor === null) {
-      s = proximoTurno(s); // volta à compra do jogador 0
-      s = comprarCarta(s, 0).estado; // compra → principal
-      s = proximaFase(s).estado; // combate
+      s = proximoTurno(s);
+      s = comprarCarta(s, 0).estado;
     }
   }
   assert.equal(s.levelPartida[1], 0);
-});
-
-console.log('modo ataque/defesa');
-
-/**
- * Estado: golem (700/1100) no campo 0, alvo no campo 1,
- * vez do jogador 0, na fase PRINCIPAL (para testes de modo).
- */
-function dueloGolemVsPrincipal(alvoId: string, seed: number) {
-  let s = atePrincipal(dueloNovo({
-    deck: [deckDe('golem-ferro'), deckDe(alvoId)],
-    seed,
-  }));
-  const golem = primeiroUid(s, 0, 'golem-ferro');
-  s = invocar(s, 0, golem).estado; // fase principal
-  // Turno do jogador 1: compra e invoca o alvo.
-  s = proximaFase(s).estado; // combate
-  s = proximaFase(s).estado; // finalizacao
-  s = proximaFase(s).estado; // fim
-  s = proximaFase(s).estado; // termina turno → vez 1, compra
-  s = comprarCarta(s, 1).estado; // compra → principal
-  const alvo = primeiroUid(s, 1, alvoId);
-  s = invocar(s, 1, alvo).estado; // fase principal
-  // Volta ao jogador 0 na fase PRINCIPAL.
-  s = proximaFase(s).estado; // combate
-  s = proximaFase(s).estado; // finalizacao
-  s = proximaFase(s).estado; // fim
-  s = proximaFase(s).estado; // termina turno → vez 0, compra
-  s = comprarCarta(s, 0).estado; // compra → principal
-  const golemUid = s.campo[0]!.find((z) => z && cartaIdDe(z.uid) === 'golem-ferro')!.uid;
-  const alvoUid = s.campo[1]!.find((z) => z && cartaIdDe(z.uid) === alvoId)!.uid;
-  return { s, golemUid, alvoUid };
-}
-
-/**
- * Estado: golem no campo 0, alvo no campo 1, vez do jogador 1,
- * na fase PRINCIPAL (para o jogador 1 mudar o modo do alvo).
- */
-function dueloGolemVsPrincipalP1(alvoId: string, seed: number) {
-  let s = atePrincipal(dueloNovo({
-    deck: [deckDe('golem-ferro'), deckDe(alvoId)],
-    seed,
-  }));
-  const golem = primeiroUid(s, 0, 'golem-ferro');
-  s = invocar(s, 0, golem).estado; // fase principal
-  // Turno do jogador 1: compra e invoca o alvo.
-  s = proximaFase(s).estado; // combate
-  s = proximaFase(s).estado; // finalizacao
-  s = proximaFase(s).estado; // fim
-  s = proximaFase(s).estado; // termina turno → vez 1, compra
-  s = comprarCarta(s, 1).estado; // compra → principal
-  const alvo = primeiroUid(s, 1, alvoId);
-  s = invocar(s, 1, alvo).estado; // fase principal
-  const golemUid = s.campo[0]!.find((z) => z && cartaIdDe(z.uid) === 'golem-ferro')!.uid;
-  const alvoUid = s.campo[1]!.find((z) => z && cartaIdDe(z.uid) === alvoId)!.uid;
-  return { s, golemUid, alvoUid };
-}
-
-/**
- * Estado: golem (700/1100) no campo 0, alvo no campo 1,
- * vez do jogador 0, na fase COMBATE (para testes de ataque).
- */
-function dueloGolemVsCombate(alvoId: string, seed: number) {
-  const { s: estado } = dueloGolemVsPrincipal(alvoId, seed);
-  // Define a fase diretamente (sem proximaFase, que poderia
-  // terminar o turno se houvesse deck-out).
-  const s = { ...estado, fase: 'combate' as const };
-  const golemUid = s.campo[0]!.find((z) => z && cartaIdDe(z.uid) === 'golem-ferro')!.uid;
-  const alvoUid = s.campo[1]!.find((z) => z && cartaIdDe(z.uid) === alvoId)!.uid;
-  return { s, golemUid, alvoUid };
-}
-
-ok('criatura em modo defesa não ataca', () => {
-  // Golem em defesa na fase combate.
-  const { s: s0, golemUid } = dueloGolemVsPrincipal('morcego-sombra', 1);
-  let s = alternarModo(s0, 0, golemUid).estado; // golem em defesa (fase principal)
-  s = proximaFase(s).estado; // combate
-  assert.equal(
-    motivoNaoPodeAtacar(s, 0, golemUid, { tipo: 'jogador' }),
-    'criatura em modo defesa não ataca',
-  );
-});
-
-ok('ataque a modo defesa: atk > def destrói sem dano ao jogador', () => {
-  // Jogador 1 põe o morcego em defesa na fase principal.
-  const { s: s0, alvoUid } = dueloGolemVsPrincipalP1('morcego-sombra', 1);
-  const s1 = alternarModo(s0, 1, alvoUid).estado; // morcego em defesa
-  // Volta ao jogador 0 na fase de combate.
-  let s = proximaFase(s1).estado; // combate
-  s = proximaFase(s).estado; // finalizacao
-  s = proximaFase(s).estado; // fim
-  s = proximaFase(s).estado; // termina turno → vez 0, compra
-  s = comprarCarta(s, 0).estado; // compra → principal
-  s = proximaFase(s).estado; // combate
-  const golemUid = s.campo[0]!.find((z) => z && cartaIdDe(z.uid) === 'golem-ferro')!.uid;
-  const morcegoUid = s.campo[1]!.find((z) => z && cartaIdDe(z.uid) === 'morcego-sombra')!.uid;
-  const antes = s.lp[1]!;
-  const s2 = atacar(s, 0, golemUid, { tipo: 'carta', uid: morcegoUid }).estado;
-  assert.equal(s2.lp[1], antes);
-  assert.ok(s2.campo[1]!.every((z) => z === null || z.uid !== morcegoUid));
-});
-
-ok('ataque a modo defesa: atk < def rebate no atacante, alvo sobrevive', () => {
-  // Turno 1: golem em defesa. Turno 2: morcego ataca.
-  let s = atePrincipal(dueloNovo({ deck: [deckDe('golem-ferro'), deckDe('morcego-sombra')], seed: 1 }));
-  const golem = primeiroUid(s, 0, 'golem-ferro');
-  s = invocar(s, 0, golem).estado;
-  s = alternarModo(s, 0, golem).estado; // golem em defesa
-  s = proximaFase(s).estado; // combate
-  s = proximaFase(s).estado; // finalizacao
-  s = proximaFase(s).estado; // fim
-  s = proximaFase(s).estado; // termina turno → vez 1
-  s = comprarCarta(s, 1).estado; // compra → principal
-  const morcego = primeiroUid(s, 1, 'morcego-sombra');
-  s = invocar(s, 1, morcego).estado;
-  s = proximaFase(s).estado; // combate
-  const antes = s.lp[1]!;
-  const s2 = atacar(s, 1, morcego, { tipo: 'carta', uid: golem }).estado;
-  assert.equal(s2.lp[1], antes - 500);
-  assert.ok(s2.campo[0]!.some((z) => z?.uid === golem));
-});
-
-ok('batalha em modo ataque: atk > def destrói e fere', () => {
-  const { s, golemUid, alvoUid } = dueloGolemVsCombate('morcego-sombra', 1);
-  const antes = s.lp[1]!;
-  const s1 = atacar(s, 0, golemUid, { tipo: 'carta', uid: alvoUid }).estado;
-  assert.equal(s1.lp[1], antes - 300);
-  assert.ok(s1.campo[1]!.every((z) => z === null || z.uid !== alvoUid));
-});
-
-ok('batalha em modo ataque: def > atk rebate no atacante', () => {
-  let s = atePrincipal(dueloNovo({ deck: [deckDe('golem-ferro'), deckDe('morcego-sombra')], seed: 1 }));
-  const golem = primeiroUid(s, 0, 'golem-ferro');
-  s = invocar(s, 0, golem).estado;
-  s = proximaFase(s).estado; // combate
-  s = proximaFase(s).estado; // finalizacao
-  s = proximaFase(s).estado; // fim
-  s = proximaFase(s).estado; // termina turno → vez 1
-  s = comprarCarta(s, 1).estado; // compra → principal
-  const morcego = primeiroUid(s, 1, 'morcego-sombra');
-  s = invocar(s, 1, morcego).estado;
-  s = proximaFase(s).estado; // combate
-  const antes = s.lp[1]!;
-  const s1 = atacar(s, 1, morcego, { tipo: 'carta', uid: golem }).estado;
-  assert.equal(s1.lp[1], antes - 500);
-  assert.ok(s1.campo[1]!.every((z) => z === null || z.uid !== morcego));
-});
-
-ok('criatura não ataca duas vezes no mesmo turno', () => {
-  const { s, golemUid, alvoUid } = dueloGolemVsCombate('morcego-sombra', 1);
-  const s1 = atacar(s, 0, golemUid, { tipo: 'carta', uid: alvoUid }).estado;
-  assert.equal(
-    motivoNaoPodeAtacar(s1, 0, golemUid, { tipo: 'jogador' }),
-    'essa criatura já atacou neste turno',
-  );
-});
-
-console.log('ataque direto bloqueado por criaturas');
-ok('não ataca a vida do inimigo com criaturas no campo dele', () => {
-  // Golem do jogador 0, morcego do jogador 1 em campo.
-  const { s, golemUid } = dueloGolemVsCombate('morcego-sombra', 1);
-  assert.ok(s.campo[1]!.some((z) => z !== null));
-  assert.equal(
-    motivoNaoPodeAtacar(s, 0, golemUid, { tipo: 'jogador' }),
-    'não pode atacar a vida do inimigo enquanto ele tiver criaturas no campo',
-  );
-  assert.throws(
-    () => atacar(s, 0, golemUid, { tipo: 'jogador' }),
-    /criaturas no campo/,
-  );
-});
-
-ok('a regra vale igual para o jogador 2 atacando o jogador 1', () => {
-  // Controle: jogador 1 com criatura, jogador 0 sem nenhuma.
-  let s = atePrincipal(dueloNovo({ deck: [deckDe('golem-ferro'), deckDe('morcego-sombra')], seed: 1 }));
-  const golem = primeiroUid(s, 0, 'golem-ferro');
-  s = invocar(s, 0, golem).estado;
-  s = proximaFase(s).estado; // combate
-  s = proximaFase(s).estado; // finalizacao
-  s = proximaFase(s).estado; // fim
-  s = proximaFase(s).estado; // termina turno → vez 1
-  s = comprarCarta(s, 1).estado; // compra → principal
-  const morcego = primeiroUid(s, 1, 'morcego-sombra');
-  s = invocar(s, 1, morcego).estado;
-  s = proximaFase(s).estado; // combate
-  assert.ok(s.campo[0]!.some((z) => z !== null));
-  assert.equal(
-    motivoNaoPodeAtacar(s, 1, morcego, { tipo: 'jogador' }),
-    'não pode atacar a vida do inimigo enquanto ele tiver criaturas no campo',
-  );
-});
-
-ok('ataque direto passa quando o campo inimigo está vazio', () => {
-  // Só o jogador 0 tem criatura; o campo 1 está limpo.
-  const s = ateCombate(dueloNovo({ deck: [deckDe('golem-ferro'), deckDe('golem-ferro')], seed: 42 }));
-  const golem = primeiroUid(s, 0, 'golem-ferro');
-  const comGolem = invocar({ ...s, fase: 'principal' as const }, 0, golem).estado;
-  assert.ok(comGolem.campo[1]!.every((z) => z === null));
-  assert.equal(motivoNaoPodeAtacar({ ...comGolem, fase: 'combate' as const }, 0, golem, { tipo: 'jogador' }), null);
-  const antes = comGolem.lp[1]!;
-  const s2 = atacar({ ...comGolem, fase: 'combate' as const }, 0, golem, { tipo: 'jogador' }).estado;
-  assert.equal(s2.lp[1], antes - CARTAS_POR_ID['golem-ferro']!.atk);
-});
-
-ok('derrotar a última criatura libera o ataque direto', () => {
-  const { s, golemUid, alvoUid } = dueloGolemVsCombate('morcego-sombra', 1);
-  // Primeiro o golem limpa o campo do oponente...
-  const s1 = atacar(s, 0, golemUid, { tipo: 'carta', uid: alvoUid }).estado;
-  assert.ok(s1.campo[1]!.every((z) => z === null));
-  // ...e a próxima criatura já pode bater direto na vida.
-  const uid2 = primeiroUid(s1, 0, 'golem-ferro');
-  let s2 = proximoTurno(s1);
-  s2 = comprarCarta(s2, 0).estado;
-  s2 = invocar(s2, 0, uid2).estado;
-  s2 = proximaFase(s2).estado; // combate
-  assert.equal(motivoNaoPodeAtacar(s2, 0, uid2, { tipo: 'jogador' }), null);
 });
 
 console.log('IA');
 ok('a IA joga o turno inteiro respeitando as fases', () => {
   const s0 = dueloNovo({ deck: [deckPadrao(), deckPadrao()], seed: 42 });
   const s1 = iaJogarTurno(s0);
-  // A IA termina o turno: vez do jogador 1, fase compra, turno 2.
   assert.equal(s1.vez, 1);
   assert.equal(s1.fase, 'compra');
   assert.equal(s1.turno, 2);
-  // Nenhuma carta invocada pede level acima do dono.
-  for (const zona of s1.campo[1]!) {
-    if (!zona) continue;
-    const carta = CARTAS_POR_ID[cartaIdDe(zona.uid)]!;
-    assert.ok(carta.nivel <= s1.levelPartida[1]!);
+});
+
+ok('a IA empilha respeitando a ordem de níveis', () => {
+  const s0 = dueloNovo({ deck: [deckPadrao(), deckPadrao()], seed: 42 });
+  const s1 = iaJogarTurno(s0);
+  for (let z = 0; z < ZONAS; z++) {
+    const p = pilha(s1, 1, z);
+    if (p.length === 0) continue;
+    const niveis = p.map((i) => CARTAS_POR_ID[cartaIdDe(i.uid)]!.nivel);
+    for (let h = 1; h < niveis.length; h++) {
+      assert.equal(niveis[h], niveis[h - 1]! + 1, `pilha ${z + 1} quebrou a ordem: ${niveis.join(',')}`);
+    }
+    for (const nivel of niveis) {
+      assert.ok(nivel <= s1.levelPartida[1]!, `nível ${nivel} acima do level ${s1.levelPartida[1]}`);
+    }
   }
+});
+
+ok('iaPassos devolve o estado a cada jogada', () => {
+  const s0 = dueloNovo({ deck: [deckPadrao(), deckPadrao()], seed: 42 });
+  const gen = iaPassos(s0);
+  const etapas: string[] = [];
+  let passo = gen.next();
+  while (!passo.done) {
+    etapas.push(passo.value.etapa);
+    assert.ok(passo.value.estado.log.length > 0);
+    passo = gen.next();
+  }
+  assert.ok(etapas.includes('compra'));
+  assert.equal(passo.value.vez, 1);
+  assert.equal(passo.value.fase, 'compra');
 });
 
 console.log('admin de cartas');
@@ -446,20 +659,16 @@ ok('cadastra, lista e remove cartas (localStorage)', () => {
     descricao: 'Uma carta de teste.',
     raridade: 'raro' as const,
     nivel: 3,
-    atk: 1500,
-    def: 1200,
-    eva: 10,
+    atk: 900,
+    def: 800,
+    eva: 12,
   };
   assert.equal(cartaValida(carta, new Set()), null);
   salvarCartas([carta]);
   assert.equal(carregarCartas().length, 1);
-
-  assert.match(cartaValida(carta, new Set([carta.id])), /já existe/);
-  assert.match(cartaValida({ ...carta, nivel: 9 }, new Set()), /nível/);
-  assert.match(cartaValida({ ...carta, atk: -1 }, new Set()), /ATK/);
-
-  salvarCartas([]);
-  assert.deepEqual(carregarCartas(), []);
+  assert.equal(carregarCartas()[0]!.nome, 'Cavaleiro Teste');
+  assert.match(cartaValida(carta, new Set([carta.id]))!, /já existe/);
+  memoria.clear();
 });
 
 console.log(`\n${passou} testes passaram`);

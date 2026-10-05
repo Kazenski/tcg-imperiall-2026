@@ -28,6 +28,18 @@
  *       obrigatório atacar uma criatura. Se passar, o dano
  *       é sempre o ATK (acerto certo).
  *
+ * Pilhas (o "campo" de cada jogador são 5 pilhas):
+ *   Cada zona do campo é uma PILHA de cartas, ordenada de baixo
+ *   para cima. Só a carta de CIMA de cada pilha é ativa: é a
+ *   que ataca e a que pode ser atacada. Para invocar numa pilha
+ *   é preciso respeitar a ordem de nível — pilha vazia aceita
+ *   só nível 0, e a partir daí cada nova carta precisa ser
+ *   exatamente um nível acima do topo. Ou seja: para ter uma
+ *   carta de nível 8 ativa, é preciso ter lv0…lv7 embaixo
+ *   dela. As cartas enterradas ficam guardadas (consulta e
+ *   efeitos futuros); quando a de cima cai, a de baixo volta
+ *   a ser a ativa.
+ *
  * EVA está reservada para cartas de efeitos especiais
  * (mágicas/armadilhas) e NÃO afeta o combate.
  *
@@ -46,13 +58,16 @@ import {
   LEVEL_INICIAL,
   MAO_INICIAL,
   ZONAS,
+  cartaAtiva,
   cartaIdDe,
+  indiceAtivo,
   type Alvo,
   type EstadoDuelo,
   type EventoDuelo,
   type Instancia,
   type Jogador,
   type Par,
+  type Pilha,
 } from './types.ts';
 
 export interface OpcaoDuelo {
@@ -123,8 +138,8 @@ export function dueloNovo(opcao: OpcaoDuelo): EstadoDuelo {
     deck: decks,
     mao: [[], []],
     campo: [
-      Array<Instancia | null>(ZONAS).fill(null),
-      Array<Instancia | null>(ZONAS).fill(null),
+      Array.from({ length: ZONAS }, (): Pilha => []),
+      Array.from({ length: ZONAS }, (): Pilha => []),
     ],
     cementerio: [[], []],
     rngState: seed,
@@ -218,8 +233,9 @@ function iniciarTurno(estado: EstadoDuelo): void {
   const vez = estado.vez;
   estado.fase = 'compra';
   estado.invocouMonstro[vez] = false;
-  for (const zona of estado.campo[vez]!) {
-    if (zona) zona.atacou = false;
+  // Todas as cartas da vez (inclusive as enterradas) liberam o ataque.
+  for (const pilha of estado.campo[vez]!) {
+    for (const instancia of pilha) instancia.atacou = false;
   }
 }
 
@@ -244,11 +260,32 @@ function aplicarDano(estado: EstadoDuelo, jogador: Jogador, quantidade: number):
   }
 }
 
-/** Motivo de não poder invocar, ou null se pode. */
+/**
+ * Nível que a pilha `pilha` aceita agora: 0 se está vazia,
+ * ou um acima do nível da carta que está no topo.
+ */
+function nivelAceitoPela(pilha: Pilha): number {
+  const topo = cartaAtiva(pilha);
+  return topo ? CARTAS_POR_ID[topo.cartaId]!.nivel + 1 : 0;
+}
+
+/** Índices das pilhas que aceitam uma carta de `nivel` agora. */
+export function pilhasQueAceitam(estado: EstadoDuelo, jogador: Jogador, nivel: number): number[] {
+  return estado.campo[jogador]!
+    .map((pilha, indice) => ({ pilha, indice }))
+    .filter(({ pilha }) => nivelAceitoPela(pilha) === nivel)
+    .map(({ indice }) => indice);
+}
+
+/**
+ * Motivo de não poder invocar `uid` na pilha `zona`,
+ * ou null se pode.
+ */
 export function motivoNaoPodeInvocar(
   estado: EstadoDuelo,
   jogador: Jogador,
   uid: string,
+  zona: number,
 ): string | null {
   if (estado.vencedor !== null) return 'o duelo já acabou';
   if (estado.vez !== jogador) return 'não é a sua vez';
@@ -260,7 +297,20 @@ export function motivoNaoPodeInvocar(
   if (estado.levelPartida[jogador]! < carta.nivel) {
     return `seu level na partida (${estado.levelPartida[jogador]}) não alcança o nível ${carta.nivel} da carta`;
   }
-  if (estado.campo[jogador]!.every((z) => z !== null)) return 'campo cheio (5 criaturas)';
+
+  const pilhas = estado.campo[jogador]!;
+  if (!Number.isInteger(zona) || zona < 0 || zona >= pilhas.length) {
+    return 'essa pilha não existe (o campo tem 5)';
+  }
+
+  // Regra da pilha: a carta precisa ser exatamente o próximo nível.
+  const aceito = nivelAceitoPela(pilhas[zona]!);
+  if (carta.nivel !== aceito) {
+    if (carta.nivel < aceito) {
+      return `a pilha ${zona + 1} já está no nível ${aceito - 1}: para ${carta.nome} (nível ${carta.nivel}) use outra pilha`;
+    }
+    return `a pilha ${zona + 1} só aceita nível ${aceito} agora — faltam as cartas de baixo`;
+  }
   return null;
 }
 
@@ -268,28 +318,32 @@ export function invocar(
   estado: EstadoDuelo,
   jogador: Jogador,
   uid: string,
+  zona: number,
 ): { estado: EstadoDuelo; evento: EventoDuelo } {
   const s = novo(estado);
-  const motivo = motivoNaoPodeInvocar(s, jogador, uid);
+  const motivo = motivoNaoPodeInvocar(s, jogador, uid, zona);
   if (motivo) throw new Error(motivo);
 
   const cartaId = cartaIdDe(uid);
   const carta = CARTAS_POR_ID[cartaId]!;
   s.mao[jogador] = s.mao[jogador]!.filter((u) => u !== uid);
   s.invocouMonstro[jogador] = true;
-  const zona = s.campo[jogador]!.findIndex((z) => z === null);
-  s.campo[jogador]![zona] = { uid, cartaId, atacou: false, modo: 'ataque' };
+  // A carta entra por CIMA da pilha e passa a ser a ativa.
+  s.campo[jogador]![zona]!.push({ uid, cartaId, atacou: false, modo: 'ataque' });
 
+  const empilhada = s.campo[jogador]![zona]!.length > 1;
   return {
     estado: s,
     evento: registrar(s, {
       tipo: 'invocar',
-      mensagem: `Jogador ${jogador + 1} invocou ${carta.nome} (nível ${carta.nivel}).`,
+      mensagem: empilhada
+        ? `Jogador ${jogador + 1} empilhou ${carta.nome} (nível ${carta.nivel}) sobre a pilha ${zona + 1} (nível ${carta.nivel - 1}).`
+        : `Jogador ${jogador + 1} invocou ${carta.nome} (nível ${carta.nivel}) na pilha ${zona + 1}.`,
     }),
   };
 }
 
-/** Troca uma criatura entre modo ataque e defesa (fase principal). */
+/** Troca a criatura ATIVA entre modo ataque e defesa (fase principal). */
 export function alternarModo(
   estado: EstadoDuelo,
   jogador: Jogador,
@@ -300,7 +354,8 @@ export function alternarModo(
   if (s.vez !== jogador) throw new Error('não é a sua vez');
   if (s.fase !== 'principal') throw new Error('só se muda de modo na fase principal');
   const achado = instanciaNoCampo(s, jogador, uid);
-  if (!achado) throw new Error('essa criatura não está no seu campo');
+  if (!achado) throw new Error('essa criatura não está em nenhuma das suas pilhas');
+  if (!achado.ativa) throw new Error('só a carta de cima da pilha muda de modo');
   if (achado.instancia.atacou) {
     throw new Error('criatura que já atacou não troca de modo neste turno');
   }
@@ -311,22 +366,39 @@ export function alternarModo(
     estado: s,
     evento: registrar(s, {
       tipo: 'modo',
-      mensagem: `${carta.nome} entrou em modo ${proximo}.`,
+      mensagem: `${carta.nome} (pilha ${achado.zona + 1}) entrou em modo ${proximo}.`,
     }),
   };
 }
 
+/** Onde está uma criatura: em qual pilha e em que altura dela. */
 function instanciaNoCampo(
   estado: EstadoDuelo,
   jogador: Jogador,
   uid: string,
-): { instancia: Instancia; indice: number } | null {
-  const campo = estado.campo[jogador]!;
-  for (let i = 0; i < campo.length; i++) {
-    const z = campo[i];
-    if (z != null && z.uid === uid) return { instancia: z, indice: i };
+): { instancia: Instancia; zona: number; altura: number; ativa: boolean } | null {
+  const pilhas = estado.campo[jogador]!;
+  for (let z = 0; z < pilhas.length; z++) {
+    const pilha = pilhas[z]!;
+    for (let h = 0; h < pilha.length; h++) {
+      if (pilha[h]!.uid === uid) {
+        return { instancia: pilha[h]!, zona: z, altura: h, ativa: h === indiceAtivo(pilha) };
+      }
+    }
   }
   return null;
+}
+
+/** A carta ativa de cada pilha inimiga que ainda pode ser atacada. */
+export function alvosAtivos(estado: EstadoDuelo, jogador: Jogador): Instancia[] {
+  return estado.campo[adversario(jogador)]!
+    .map((pilha) => cartaAtiva(pilha))
+    .filter((c): c is Instancia => c !== null);
+}
+
+/** Alguma pilha do jogador tem alguma carta (para a regra do direto)? */
+export function temCriatura(estado: EstadoDuelo, jogador: Jogador): boolean {
+  return estado.campo[jogador]!.some((pilha) => pilha.length > 0);
 }
 
 /** Motivo de não poder atacar, ou null se pode. */
@@ -340,22 +412,20 @@ export function motivoNaoPodeAtacar(
   if (estado.vez !== jogador) return 'não é a sua vez';
   if (estado.fase !== 'combate') return 'só se ataca na fase de combate';
   const atacante = instanciaNoCampo(estado, jogador, uidAtacante);
-  if (!atacante) return 'essa criatura não está no seu campo';
+  if (!atacante) return 'essa criatura não está em nenhuma das suas pilhas';
+  if (!atacante.ativa) return 'só a carta de cima da pilha ataca';
   if (atacante.instancia.atacou) return 'essa criatura já atacou neste turno';
   if (atacante.instancia.modo !== 'ataque') {
     return 'criatura em modo defesa não ataca';
   }
   if (alvo.tipo === 'carta') {
-    if (!instanciaNoCampo(estado, adversario(jogador), alvo.uid)) {
-      return 'a criatura-alvo não está no campo inimigo';
-    }
+    const alvoCarta = instanciaNoCampo(estado, adversario(jogador), alvo.uid);
+    if (!alvoCarta) return 'a criatura-alvo não está em nenhuma pilha inimiga';
+    if (!alvoCarta.ativa) return 'a criatura-alvo não está no topo da pilha';
   }
-  // Nova regra: não pode atacar o jogador direto se o inimigo tiver cartas no campo
-  if (alvo.tipo === 'jogador') {
-    const campoInimigo = estado.campo[adversario(jogador)]!;
-    if (campoInimigo.some((z) => z != null)) {
-      return 'não pode atacar a vida do inimigo enquanto ele tiver criaturas no campo';
-    }
+  // Regra: direto só com o campo inimigo totalmente vazio.
+  if (alvo.tipo === 'jogador' && temCriatura(estado, adversario(jogador))) {
+    return 'não pode atacar a vida do inimigo enquanto ele tiver criaturas no campo';
   }
   return null;
 }
@@ -363,13 +433,18 @@ export function motivoNaoPodeAtacar(
 function destruir(
   estado: EstadoDuelo,
   jogador: Jogador,
-  indice: number,
+  zona: number,
+  altura: number,
   nome: string,
 ): void {
-  const zona = estado.campo[jogador]![indice]!;
-  estado.campo[jogador]![indice] = null;
-  estado.cementerio[jogador]!.push(zona.uid);
-  registrar(estado, { tipo: 'destruir', mensagem: `${nome} foi destruída.` });
+  const pilha = estado.campo[jogador]![zona]!;
+  const removida = pilha.splice(altura, 1)[0]!;
+  estado.cementerio[jogador]!.push(removida.uid);
+  const revelou = altura === pilha.length;
+  registrar(estado, {
+    tipo: 'destruir',
+    mensagem: `${nome} foi destruída.${revelou && pilha.length > 0 ? ` A carta de baixo (nível ${CARTAS_POR_ID[cartaIdDe(pilha[pilha.length - 1]!.uid)]!.nivel}) ficou ativa.` : ''}`,
+  });
 }
 
 /** Resolve um ataque. Retorna o estado novo e o log do que aconteceu. */
@@ -400,14 +475,15 @@ export function atacar(
   }
 
   // Criatura x criatura: o MODO do alvo muda tudo.
-  const alvoCampo = instanciaNoCampo(s, alvoJogador, alvo.uid)!;
-  const cartaAlvo = CARTAS_POR_ID[alvoCampo.instancia.cartaId]!;
+  const alvoPilha = instanciaNoCampo(s, alvoJogador, alvo.uid)!;
+  const cartaAlvo = CARTAS_POR_ID[alvoPilha.instancia.cartaId]!;
   const atk = cartaAtacante.atk;
   const def = cartaAlvo.def;
 
-  if (alvoCampo.instancia.modo === 'defesa') {
+  if (alvoPilha.instancia.modo === 'defesa') {
     if (atk > def) {
-      destruir(s, alvoJogador, alvoCampo.indice, cartaAlvo.nome);
+      // Def menor: destrói o alvo e NÃO causa dano.
+      destruir(s, alvoJogador, alvoPilha.zona, alvoPilha.altura, cartaAlvo.nome);
       const evento = registrar(s, {
         tipo: 'destruir',
         mensagem: `${cartaAtacante.nome} rompeu a defesa de ${cartaAlvo.nome} (sem dano ao jogador).`,
@@ -416,6 +492,7 @@ export function atacar(
       return { estado: s, evento };
     }
     if (atk < def) {
+      // Def maior: o ATACANTE leva a diferença.
       const dano = def - atk;
       aplicarDano(s, jogador, dano);
       const evento = registrar(s, {
@@ -433,11 +510,11 @@ export function atacar(
     return { estado: s, evento };
   }
 
-  // Alvo em modo ataque.
+  // Alvo em modo ATAQUE: a diferença vai para a vida de quem perde.
   if (atk > def) {
     const dano = atk - def;
     aplicarDano(s, alvoJogador, dano);
-    destruir(s, alvoJogador, alvoCampo.indice, cartaAlvo.nome);
+    destruir(s, alvoJogador, alvoPilha.zona, alvoPilha.altura, cartaAlvo.nome);
     const evento = registrar(s, {
       tipo: 'dano',
       mensagem: `${cartaAtacante.nome} destruiu ${cartaAlvo.nome} e causou ${dano} de dano.`,
@@ -448,7 +525,7 @@ export function atacar(
   if (atk < def) {
     const dano = def - atk;
     aplicarDano(s, jogador, dano);
-    destruir(s, jogador, atacante.indice, cartaAtacante.nome);
+    destruir(s, jogador, atacante.zona, atacante.altura, cartaAtacante.nome);
     const evento = registrar(s, {
       tipo: 'dano',
       mensagem: `${cartaAlvo.nome} venceu: ${cartaAtacante.nome} destruída, ${dano} de dano rebatido.`,
@@ -456,8 +533,9 @@ export function atacar(
     checarFim(s);
     return { estado: s, evento };
   }
-  destruir(s, alvoJogador, alvoCampo.indice, cartaAlvo.nome);
-  destruir(s, jogador, atacante.indice, cartaAtacante.nome);
+  // Empate: as duas se destroem.
+  destruir(s, alvoJogador, alvoPilha.zona, alvoPilha.altura, cartaAlvo.nome);
+  destruir(s, jogador, atacante.zona, atacante.altura, cartaAtacante.nome);
   const evento = registrar(s, {
     tipo: 'destruir',
     mensagem: `${cartaAtacante.nome} e ${cartaAlvo.nome} se destruíram mutuamente.`,

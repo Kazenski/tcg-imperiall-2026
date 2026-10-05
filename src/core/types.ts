@@ -42,6 +42,31 @@ export interface Instancia {
   modo: Modo;
 }
 
+/**
+ * Uma pilha de criaturas dentro de uma zona do campo.
+ *
+ * O índice 0 é a carta do FUNDO; a última é a carta de CIMA,
+ * que é a única ativa (a que pode atacar e receber ataques).
+ *
+ * A pilha só cresce em ordem de nível: para colocar uma carta
+ * de nível N o topo precisa ser uma carta de nível N-1 — pilha
+ * vazia aceita só nível 0. Assim ter uma carta de nível 8 ativa
+ * exige lv0…lv7 embaixo. As cartas de baixo continuam guardadas
+ * (consulta e futuros efeitos que mexem na pilha); se a de cima
+ * for destruída, a de baixo volta a ser a ativa.
+ */
+export type Pilha = Instancia[];
+
+/** Índice da carta ativa (do topo) da pilha, ou -1 se vazia. */
+export function indiceAtivo(pilha: Pilha): number {
+  return pilha.length - 1;
+}
+
+/** A carta ativa da pilha (a do topo), ou null se a pilha está vazia. */
+export function cartaAtiva(pilha: Pilha): Instancia | null {
+  return pilha.length > 0 ? pilha[pilha.length - 1]! : null;
+}
+
 export type Jogador = 0 | 1;
 
 /** Par ordenado por jogador: [jogador0, jogador1]. */
@@ -78,8 +103,11 @@ export interface EstadoDuelo {
   deck: Par<string[]>;
   /** uids das cartas na mão. */
   mao: Par<string[]>;
-  /** 5 zonas cada; null = zona vazia. */
-  campo: Par<Array<Instancia | null>>;
+  /**
+   * 5 pilhas por jogador. Cada pilha é ordenada de baixo (índice 0)
+   * para cima (último índice) — só a carta do topo é ativa.
+   */
+  campo: Par<Pilha[]>;
   /** uids das cartas destruídas. */
   cementerio: Par<string[]>;
   /** Estado interno do RNG (seed corrente). */
