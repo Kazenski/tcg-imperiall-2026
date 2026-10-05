@@ -41,6 +41,14 @@ body {
   align-items: start;
 }
 
+/* Centro: campos espelhados lado a lado */
+.centro {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 10px;
+  align-items: start;
+}
+
 /* --- HUD ---------------------------------------------------- */
 
 .hud {

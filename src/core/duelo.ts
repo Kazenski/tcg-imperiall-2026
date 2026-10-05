@@ -347,6 +347,13 @@ export function motivoNaoPodeAtacar(
       return 'a criatura-alvo não está no campo inimigo';
     }
   }
+  // Nova regra: não pode atacar o jogador direto se o inimigo tiver cartas no campo
+  if (alvo.tipo === 'jogador') {
+    const campoInimigo = estado.campo[adversario(jogador)]!;
+    if (campoInimigo.some((z) => z != null)) {
+      return 'não pode atacar a vida do inimigo enquanto ele tiver criaturas no campo';
+    }
+  }
   return null;
 }
 

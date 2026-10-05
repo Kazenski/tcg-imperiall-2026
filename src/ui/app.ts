@@ -280,7 +280,8 @@ function adversario(jogador: 0 | 1): 0 | 1 {
 function centroPainel(): HTMLElement {
   const centro = document.createElement('div');
   centro.className = 'centro';
-  centro.append(barraFases(), deckDo(1), campoDo(1), campoDo(0), deckDo(0), maoDo());
+  // Layout espelhado: campo/inimigo à esquerda, campo/jogador à direita, mão no meio
+  centro.append(deckDo(1), campoDo(1), maoDo(), campoDo(0), deckDo(0), barraFases());
   return centro;
 }
 
