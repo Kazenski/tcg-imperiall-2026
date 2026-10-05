@@ -16,8 +16,58 @@
  * Nada aqui é código de regra: só armazenamento e validação.
  */
 
-import type { CartaTCG } from './types.ts';
+import type { AlvoMecanica, CartaTCG, Mecanica, TipoCarta } from './types.ts';
 import type { Rarity } from './raridade.ts';
+
+/** Tipos que o Admin sabe cadastrar. */
+const TIPOS_CARTA: TipoCarta[] = ['criatura', 'acao', 'reacao'];
+/** Nomes das mecânicas implementadas em `core/efeitos.ts`. */
+const MECANICAS_CONHECIDAS = new Set<string>([
+  'remover-niveis',
+  'rodar-pilha',
+  'trocar-topo',
+  'silenciar',
+  'desarmar',
+  'espelhar-modo',
+  'empilhar-rapido',
+  'ressuscitar',
+  'dano-direto',
+  'cavar-level',
+  'congelar-level',
+  'abrir-vida',
+  'proteger',
+]);
+const ALVOS_CONHECIDOS = new Set<string>([
+  'pilha-inimiga',
+  'pilha-sua',
+  'carta-inimiga',
+  'carta-sua',
+  'jogador-inimigo',
+  'mao-sua',
+  'cemiterio-seu',
+]);
+
+/** Opções de mecânica que o Admin oferece (nome legível). */
+export const OPCOES_MECANICA: Array<{
+  valor: Mecanica;
+  nome: string;
+  alvo: AlvoMecanica;
+  ajuda: string;
+}> = [
+  { valor: 'remover-niveis', nome: 'Remover níveis da pilha', alvo: 'pilha-inimiga', ajuda: 'Quantos levels tirar do topo da pilha inimiga (1 a 12).' },
+  { valor: 'rodar-pilha', nome: 'Rodar a pilha', alvo: 'pilha-inimiga', ajuda: 'Manda o topo da pilha inimiga para o fundo.' },
+  { valor: 'trocar-topo', nome: 'Trocar topo e fundo', alvo: 'pilha-inimiga', ajuda: 'Troca o topo da pilha inimiga com a carta de baixo.' },
+  { valor: 'silenciar', nome: 'Silenciar', alvo: 'carta-inimiga', ajuda: 'A carta ativa inimiga não ataca neste ciclo.' },
+  { valor: 'desarmar', nome: 'Desarmar', alvo: 'carta-inimiga', ajuda: 'Força a carta ativa inimiga a modo defesa.' },
+  { valor: 'espelhar-modo', nome: 'Espelhar modo', alvo: 'pilha-inimiga', ajuda: 'Copia seu modo para a carta ativa da pilha inimiga.' },
+  { valor: 'empilhar-rapido', nome: 'Empilhar rápido', alvo: 'pilha-sua', ajuda: 'Empilha uma carta da sua mão sem gastar a invocação.' },
+  { valor: 'ressuscitar', nome: 'Ressuscitar', alvo: 'cemiterio-seu', ajuda: 'Traz uma carta do seu Cemitério para a mão.' },
+  { valor: 'dano-direto', nome: 'Dano direto', alvo: 'jogador-inimigo', ajuda: 'Quanto de dano direto na vida do oponente.' },
+  { valor: 'cavar-level', nome: 'Cavar level', alvo: 'jogador-inimigo', ajuda: 'Quantos levels tira do oponente sem dano.' },
+  { valor: 'congelar-level', nome: 'Congelar level', alvo: 'jogador-inimigo', ajuda: 'O oponente não sobe de level neste ciclo.' },
+  { valor: 'abrir-vida', nome: 'Abrir a vida', alvo: 'jogador-inimigo', ajuda: 'Libera o ataque direto mesmo com criaturas em campo.' },
+  { valor: 'proteger', nome: 'Proteger', alvo: 'carta-sua', ajuda: 'Protege a sua carta ativa. Valor = quantas cartas (1 a 5).' },
+];
 
 const CHAVE = 'imperiall-tcg:cartas:v1';
 
@@ -119,6 +169,22 @@ export function cartaValida(
   if (!Number.isInteger(nivel) || nivel < 0 || nivel > 8) {
     return 'nível precisa ser inteiro de 0 a 8';
   }
+
+  // Cartas de efeito não têm ATK/DEF/EVA: precisam de uma mecânica
+  // conhecida do catálogo, senão o jogo não sabe o que fazer com elas.
+  const tipo = carta.tipo ?? 'criatura';
+  if (!TIPOS_CARTA.includes(tipo)) return 'tipo de carta inválido';
+  if (tipo !== 'criatura') {
+    const mec = carta.cartaMecanica;
+    if (!mec) return 'escolha a mecânica da carta de efeito';
+    if (!MECANICAS_CONHECIDAS.has(mec.mecanica)) return 'mecânica desconhecida';
+    if (!Number.isInteger(mec.valor) || mec.valor < 0) {
+      return 'o valor da mecânica precisa ser um inteiro >= 0';
+    }
+    if (!ALVOS_CONHECIDOS.has(mec.alvo)) return 'alvo de mecânica inválido';
+    return null;
+  }
+
   for (const campo of ['atk', 'def', 'eva'] as const) {
     const valor = carta[campo] ?? 0;
     if (!Number.isInteger(valor) || valor < 0 || valor > 99999) {

@@ -18,6 +18,7 @@
  * ============================================================================
  */
 import type { CartaTCG } from '../core/types.ts';
+import { CARTAS_MECANICA } from './acoes.ts';
 
 export const CARTAS: CartaTCG[] = [
   // -- Nível 0: o povo — invocável mesmo em level 0 -----------------
@@ -539,14 +540,40 @@ export const CARTAS: CartaTCG[] = [
   },
 ];
 
-/** Lookup por id — o índice do deck é o id da carta. */
+/**
+ * Índice único de cartas: criaturas + cartas de Ação/Reação.
+ * Todo lugar do jogo que olha uma carta por id usa este mapa.
+ *
+ * O Admin também escreve aqui (via `registrarCartas`), porque o core
+ * das regras precisa achar a carta de um id que o jogador cadastrou.
+ */
 export const CARTAS_POR_ID: Record<string, CartaTCG> = Object.fromEntries(
-  CARTAS.map((c) => [c.id, c]),
+  [...CARTAS, ...CARTAS_MECANICA].map((c) => [c.id, c]),
 );
 
 /**
- * Deck padrão de 30 cartas: 8 de nível 0 (o povo), 10 de
- * nível 1, 6 de nível 2, 4 de nível 3 e 2 de nível 4.
+ * Acrescenta cartas ao índice (usado pelo Admin no boot do jogo).
+ * Official sempre vence: uma carta do mesmo id já no repositório
+ * não é sobrescrita por um rascunho local.
+ */
+export function registrarCartas(novas: CartaTCG[]): void {
+  for (const carta of novas) {
+    if (CARTAS_POR_ID[carta.id]) continue;
+    CARTAS_POR_ID[carta.id] = carta;
+  }
+}
+
+/**
+ * Deck padrão de 40 cartas: criaturas de nível 0 a 4 mais um
+ * pacote inicial de cartas de Ação e de Reação.
+ *
+ * Criaturas (30):
+ *   8 de nível 0 (o povo), 10 de nível 1, 6 de nível 2,
+ *   4 de nível 3 e 2 de nível 4.
+ * Efeitos (10):
+ *   3 Remover (1, 4 e 8), 2 Reações (Proteger 1 e 2), e 5 utilitárias
+ *   (Emergir, Ressurreição, Chama rápida, Silêncio, Espelhar).
+ *
  * Cada posição vira um uid único (`id#posição`) na criação do duelo.
  */
 export function deckPadrao(): string[] {
@@ -569,5 +596,11 @@ export function deckPadrao(): string[] {
     'arqueira-vigia', 'elmo-abismo',
     'escudo-carvalho', 'cavaleiro-ferro',
     'bruxa-cinzas', 'troll-ponte',
+
+    // --- pacote de efeitos ---
+    'remover-1', 'remover-4', 'remover-8',
+    'proteger-1', 'proteger-2',
+    'empilhar-rapido', 'ressuscitar',
+    'dano-direto-1', 'silenciar', 'espelhar-modo',
   ];
 }

@@ -21,6 +21,7 @@
           <a href="#combate">Combate</a>
           <a href="#level">Level</a>
           <a href="#cartas">Cartas</a>
+          <a href="#efeitos">Ação/Reação</a>
           <a href="#roadmap">Roadmap</a>
           <a href="./jogo.html">Jogar</a>
         </nav>
@@ -420,13 +421,18 @@
               </div>
               <div class="termo">
                 <dt>💨 EVA</dt>
-                <dd>Reservada para cartas de efeito (mágicas e armadilhas). Hoje não afeta o combate.</dd>
+                <dd>Reservada para efeitos futuros. Hoje não afeta o combate.</dd>
               </div>
               <div class="termo">
                 <dt>Nível</dt>
                 <dd>O level da partida exigido para invocá-la. Determina a ordem da pilha.</dd>
               </div>
             </dl>
+            <p>
+              Esses três números <strong>só existem nas criaturas</strong>. As cartas de Ação e de
+              Reação não têm ATK, DEF nem EVA: no lugar deles aparece o rodapé colorido com o tipo da
+              carta (azul para Ação, rosa para Reação).
+            </p>
             <p>
               A raridade aparece como um <strong>brilho colorido</strong> em volta da carta: cinza
               (comum), azul (incomum), roxo (raro), laranja (épico) e dourado (lendário).
@@ -455,9 +461,125 @@
         </p>
       </section>
 
+      <!-- ===================== CARTAS DE AÇÃO/REAÇÃO ===================== -->
+      <section class="doc-secao" id="efeitos">
+        <h2><span class="num">07</span> Cartas de Ação e de Reação</h2>
+        <p class="lead">
+          Criaturas empilham. Cartas de efeito <strong>agem</strong>: são jogadas da mão, resolvem uma
+          coisa em um alvo e vão para o <strong>Cemitério</strong>. Não entram em pilha nenhuma e não
+          têm ATK, DEF ou EVA — o lugar dos números no rodapé da carta é o tipo dela.
+        </p>
+
+        <h3>Os dois tipos</h3>
+        <dl class="termos">
+          <div class="termo">
+            <dt style="color: #7fc4ff">Carta de Ação</dt>
+            <dd>
+              Só na fase <strong>Principal</strong>. Age no campo do oponente (ou no seu) e resolve na
+              hora. Não custa nada além do level exigido.
+            </dd>
+          </div>
+          <div class="termo">
+            <dt style="color: #ff9ede">Carta de Reação</dt>
+            <dd>
+              Só na fase de <strong>Combate</strong>. Defende um alvo e <strong>custa 1 level de uma
+              pilha sua</strong>: você escolhe uma pilha e a carta do topo dela vai para o Cemitério.
+            </dd>
+          </div>
+        </dl>
+
+        <h3>O rastro: o ícone na carta alvo</h3>
+        <p>
+          Quando o efeito resolve, ele deixa um <strong>ícone no canto da carta alvo</strong>. É a
+          forma de você ver, de relance, o que está pegando em quem. Os ícones:
+        </p>
+        <dl class="termos" style="grid-template-columns: 1fr 1fr">
+          <div class="termo"><dt>🛡 escudo</dt><dd>A carta está protegida: não pode ser alvo de ataque.</dd></div>
+          <div class="termo"><dt>🤐 silêncio</dt><dd>A carta não pode atacar neste ciclo.</dd></div>
+          <div class="termo"><dt>🔒 trava</dt><dd>O level do jogador está congelado: não empilha nada.</dd></div>
+          <div class="termo"><dt>🪞 espelho</dt><dd>O modo foi espelhado ou forçado para defesa.</dd></div>
+          <div class="termo"><dt>⚡ fratura</dt><dd>Levels foram removidos do topo daquela pilha.</dd></div>
+          <div class="termo"><dt>🎯 mira</dt><dd>Ataque direto na vida liberado, mesmo com criaturas em campo.</dd></div>
+        </dl>
+        <p>
+          <strong>Quando o ícone some:</strong> o rastro criado no turno N sobrevive à Finalização do
+          próprio turno e some na <strong>Finalização do turno seguinte</strong>. É isso que faz o
+          escudo usado no seu combate continuar valendo durante o combate do oponente — que é
+          quando o ataque dele acontece. Passou a Finalização do turno dele, o efeito já era.
+        </p>
+
+        <h3>Como usar na mesa</h3>
+        <p>
+          Ação é um passo só: clique na carta da mão e o alvo legal acende. Reação são <strong>dois
+          passos</strong>: clique na carta, depois na <strong>pilha que paga o custo</strong> (ela
+          acende), e só então clique na carta que quer proteger. O jogo recusa se você tentar pagar o
+          custo na mesma pilha que está protegendo — a proteção não pode se pagar em sangue.
+        </p>
+
+        <h3>As mecânicas, uma por uma</h3>
+        <p>
+          O jogo tem <strong>13 mecânicas</strong>. Várias cartas usam a mesma mecânica mudando só o
+          <strong>valor</strong> — é por isso que existem 12 cartas de "remover levels", de 1 a 12.
+          As faixas dizem a força:
+        </p>
+        <dl class="termos">
+          <div class="termo">
+            <dt>Reduzir a pilha</dt>
+            <dd>
+              <strong>Remover níveis</strong> tira N cartas do <em>topo</em> da pilha alvo e manda cada
+              uma para o Cemitério. Reduzir uma pilha de level 5 para 3 entrega de graça as cartas de
+              nível 5 e 4. <em>Faixas:</em> fraca (1–3), média (4–6), forte (7–9), devastadora (10–12).
+            </dd>
+          </div>
+          <div class="termo">
+            <dt>Mexer na pilha</dt>
+            <dd>
+              <strong>Rodar a pilha</strong> manda o topo para o fundo (a de baixo assume).
+              <strong>Trocar topo e fundo</strong> inverte os dois. <strong>Espelhar modo</strong>
+              copia o seu modo (ataque/defesa) para a carta ativa da pilha alvo.
+            </dd>
+          </div>
+          <div class="termo">
+            <dt>Construir mais rápido</dt>
+            <dd>
+              <strong>Empilhar rápido</strong> empilha uma carta da sua mão sem gastar a invocação do
+              turno (a ordem de níveis continua valendo). <strong>Ressuscitar</strong> traz uma carta
+              do seu Cemitério de volta para a mão.
+            </dd>
+          </div>
+          <div class="termo">
+            <dt>O relógio</dt>
+            <dd>
+              <strong>Dano direto</strong> fere a vida do oponente furando a regra do "campo vazio".
+              <strong>Cavar level</strong> corta level sem dano. <strong>Congelar level</strong>
+              impede o oponente de subir. <strong>Abrir a vida</strong> libera o ataque direto mesmo
+              com criaturas em campo — o jeito de furar a regra mais dura do jogo.
+            </dd>
+          </div>
+          <div class="termo">
+            <dt>Controle</dt>
+            <dd>
+              <strong>Silenciar</strong> impede a carta ativa do oponente de atacar.
+              <strong>Desarmar</strong> força essa carta a modo defesa até o rastro sumir.
+            </dd>
+          </div>
+          <div class="termo">
+            <dt>Reação</dt>
+            <dd>
+              <strong>Proteger</strong> bota escudo na sua carta ativa. Existem versões de 1 a 5
+              alvos, e as mais fortes cobram mais level para usar.
+            </dd>
+          </div>
+        </dl>
+        <p>
+          Todas essas mecânicas já estão no jogo e criar cartas novas com elas é só preencher o
+          <strong>Admin</strong> (veja a seção 06).
+        </p>
+      </section>
+
       <!-- =========================== ROADMAP =========================== -->
       <section class="doc-secao" id="roadmap">
-        <h2><span class="num">07</span> O que vem pela frente</h2>
+        <h2><span class="num">08</span> O que vem pela frente</h2>
         <p class="lead">
           Onde o jogo está agora e o que está planejado, do mais próximo para o mais distante.
         </p>
@@ -478,21 +600,27 @@
               <li>Oponente com IA que joga em passos, com pausas visíveis</li>
               <li>Moldura e verso do baralho, painel de detalhes e log com as regras</li>
               <li>Admin de cartas com exportar/importar JSON</li>
+              <li>
+                <strong>Cartas de Ação e de Reação</strong> com 13 mecânicas, 12 cartas de
+                "remover levels" (1 a 12) e 5 de "proteger" (1 a 5 alvos)
+              </li>
+              <li>Ícone de efeito na carta alvo, que dura até a Finalização do turno seguinte</li>
+              <li>Reação que custa 1 level de uma pilha sua, pago em pilha diferente da protegida</li>
             </ul>
           </div>
 
           <div class="trilho-item">
             <div class="trilho-cabeca">
               <span class="trilho-fase fase-f1">Próximo</span>
-              <h3>Mágicas, armadilhas e efeitos de pilha</h3>
+              <h3>EVA e efeitos que gastam recursos</h3>
               <span class="quando">v1.1</span>
             </div>
             <ul>
-              <li><strong>Cartas de efeito usando a EVA</strong> que já está reservada nas criaturas</li>
-              <li>Zonas de magia e armadilha, com alvo de invocação ou carta</li>
-              <li>Efeitos que mexem na pilha: revelar uma carta de baixo, trocar, remover</li>
-              <li>Conjuração por nível, seguindo a mesma ordem das pilhas</li>
-              <li>Cemitério com recuperação: resgatar uma carta enterrada e voltar para a mão</li>
+              <li><strong>A EVA que já está reservada nas criaturas</strong> virando um recurso de verdade</li>
+              <li>Efeito que só roda se a carta tirar um dado de EVA</li>
+              <li>Custo de cartas de Reação que não seja a pilha: level do dono, ou carta do Cemitério</li>
+              <li>Contra-efeito: uma carta que limpa marcas antes do combate</li>
+              <li>Mecânica nova por carta, escrita pelo Admin com a mesma linguagem das 13 atuais</li>
             </ul>
           </div>
 
@@ -569,7 +697,7 @@
 
       <!-- ============================= FAQ ============================= -->
       <section class="doc-secao" id="faq">
-        <h2><span class="num">08</span> Perguntas frequentes</h2>
+        <h2><span class="num">09</span> Perguntas frequentes</h2>
         <div class="faq">
           <details>
             <summary>Por que não consigo invocar minha carta de nível 3?</summary>
@@ -610,9 +738,53 @@
           <details>
             <summary>Consso jogar as minhas próprias cartas?</summary>
             <div class="corpo">
-              Sim. O botão Admin cria cartas com nome, descrição, raridade, nível, ATK, DEF e EVA. Elas
-              entram no seu deck no duelo seguinte. O botão Exportar JSON gera o arquivo para
-              commit no repositório, que é como a coleção chega para os outros.
+              Sim. O botão Admin cria cartas com nome, descrição, raridade, nível, ATK, DEF e EVA. O
+              tipo de carta vem primeiro: <strong>criatura</strong> mostra os três números, e
+              <strong>ação</strong> ou <strong>reação</strong> esconde os números e abre a escolha da
+              mecânica e do valor. As cartas entram no seu deck no duelo seguinte. O botão Exportar
+              JSON gera o arquivo para commit no repositório, que é como a coleção chega para os outros.
+            </div>
+          </details>
+          <details>
+            <summary>Qual a diferença entre Carta de Ação e Carta de Reação?</summary>
+            <div class="corpo">
+              A <strong>Ação</strong> só se usa na fase Principal e age no campo do oponente: derruba
+              levels de uma pilha, causa dano direto, corta level, espelha um modo. A
+              <strong>Reação</strong> só se usa na fase de Combate, protege a sua própria carta e
+              custa 1 level de uma pilha sua — o topo dela vai para o Cemitério como pagamento.
+            </div>
+          </details>
+          <details>
+            <summary>Por que meu escudo sumiu antes de o oponente atacar?</summary>
+            <div class="corpo">
+              Não devia. O ícone criado no turno N sobrevive à Finalização do próprio turno e só é
+              varrido na Finalização do turno seguinte. Ou seja: se você protegeu no seu combate, o
+              escudo segura o ataque dele inteiro. Se o escudo sumiu antes, foi porque o turno já tinha
+              virado duas vezes desde que você jogou.
+            </div>
+          </details>
+          <details>
+            <summary>Por que o jogo não deixa eu proteger a carta e pagar o custo nela mesma?</summary>
+            <div class="corpo">
+              Porque o custo sai do <em>topo</em> da pilha. Pagar na pilha protegida destruiria a carta
+              que você está tentando salvar, e o escudo nasceria sobre uma carta que acabou de ir para o
+              Cemitério. Com uma pilha só, Reação não é jogável — monte a segunda antes.
+            </div>
+          </details>
+          <details>
+            <summary>Por que minha carta de efeito não tem ATK nem DEF?</summary>
+            <div class="corpo">
+              Porque cartas de efeito não entram em pilha e não lutam: elas são jogadas da mão,
+              resolvem uma mecânica em um alvo e vão para o Cemitério. No lugar dos números, o rodapé
+              da carta mostra o tipo — azul para Ação, rosa para Reação.
+            </div>
+          </details>
+          <details>
+            <summary>O que é a "fratura" que aparece na pilha do oponente?</summary>
+            <div class="corpo">
+              É o rastro de uma carta que removeu levels do topo daquela pilha. As cartas removidas
+              foram para o Cemitério dele e, se ainda sobrou alguma, a que ficou no topo está marcada
+              com o ícone de fratura. O rastro some na Finalização do turno seguinte.
             </div>
           </details>
         </div>

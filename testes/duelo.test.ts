@@ -9,7 +9,12 @@
  *     a de cima cai;
  *   - matemática do combate (4 casos: ataque x ataque nos dois
  *     sentidos, ataque x defesa nos dois sentidos);
- *   - regra do ataque direto (só com o campo inimigo vazio);
+ *   - regra do ataque direto (só com o campo inimigo vazio) e o
+ *     "abrir-vida" que a furra;
+ *   - CARTAS DE AÇÃO: remover N levels, dano direto, cavar level,
+ *     congelar, silenciar, desarmar, espelhar, emergir, ressuscitar;
+ *   - CARTAS DE REAÇÃO: proteger N alvos pagando 1 level próprio;
+ *   - MARCAS: nascem com prazo e somem na Finalização seguinte;
  *   - level que cai a cada 100 de dano;
  *   - IA jogando o turno inteiro, em passos;
  *   - admin de cartas (localStorage).
@@ -23,7 +28,7 @@
 
 import assert from 'node:assert/strict';
 
-import { CARTAS_POR_ID, deckPadrao } from '../src/data/cartas.ts';
+import { CARTAS_POR_ID, deckPadrao, registrarCartas } from '../src/data/cartas.ts';
 import {
   alternarModo,
   atacar,
@@ -32,9 +37,11 @@ import {
   invocar,
   motivoNaoPodeAtacar,
   motivoNaoPodeInvocar,
+  motivoNaoPodeUsar,
   pilhasQueAceitam,
   proximaFase,
   temCriatura,
+  usarCartaDeEfeito,
 } from '../src/core/duelo.ts';
 import { iaJogarTurno, iaPassos } from '../src/core/ia.ts';
 import { carregarCartas, cartaValida, idParaNome, salvarCartas } from '../src/core/admin.ts';
@@ -46,6 +53,7 @@ import {
   LEVEL_INICIAL,
   ZONAS,
   type EstadoDuelo,
+  type Instancia,
   type Jogador,
   type Modo,
   type Pilha,
@@ -83,6 +91,11 @@ const POR_NIVEL: Record<number, string> = {
   7: 'dragao-gelo',
   8: 'imperador-ruina',
 };
+
+/** Deck com 12 cópias de cada id (até 5 ids, dentro do limite de 60). */
+function deck12(...ids: string[]): string[] {
+  return ids.flatMap((id) => Array<string>(12).fill(id));
+}
 
 /** Deck que cobre todos os níveis (para poder subir pilhas). */
 function deckEscada(): string[] {
@@ -168,6 +181,32 @@ function ateTerNivel(s: EstadoDuelo, jogador: Jogador, nivel: number): EstadoDue
   throw new Error(`nenhuma carta de nível ${nivel} apareceu para o jogador ${jogador + 1}`);
 }
 
+/** Avança turnos até a carta específica estar na mão do jogador. */
+function ateTerCarta(s: EstadoDuelo, jogador: Jogador, cartaId: string): EstadoDuelo {
+  let atual = s;
+  for (let i = 0; i < 40; i++) {
+    if (atual.mao[jogador]!.some((u) => cartaIdDe(u) === cartaId)) {
+      while (atual.vez !== jogador || atual.fase !== 'principal') {
+        atual = proximaFase(atual).estado;
+      }
+      return atual;
+    }
+    while (!(atual.vez === jogador && atual.fase === 'compra')) {
+      atual = proximaFase(atual).estado;
+    }
+    atual = comprarCarta(atual, jogador).estado;
+    while (atual.fase !== 'principal') atual = proximaFase(atual).estado;
+  }
+  throw new Error(`a carta ${cartaId} não apareceu na mão do jogador ${jogador + 1}`);
+}
+
+/** O uid da carta na mão (assume que `ateTerCarta` já rodou). */
+function uidNaMao(s: EstadoDuelo, jogador: Jogador, cartaId: string): string {
+  const uid = s.mao[jogador]!.find((u) => cartaIdDe(u) === cartaId);
+  assert.ok(uid, `${cartaId} não está na mão`);
+  return uid;
+}
+
 /** Empilha os níveis informados na pilha `zona` (1 carta por turno). */
 function empilharNiveis(
   s: EstadoDuelo,
@@ -214,6 +253,18 @@ function niveisAte(nivel: number): number[] {
 /** O outro jogador. */
 function adversarioDe(jogador: Jogador): Jogador {
   return jogador === 0 ? 1 : 0;
+}
+
+/** Acha uma instância por uid em qualquer pilha de um jogador. */
+function acharNaPilha(
+  s: EstadoDuelo,
+  jogador: Jogador,
+  uid: string,
+): Instancia | undefined {
+  for (const pilha of s.campo[jogador]!) {
+    for (const i of pilha) if (i.uid === uid) return i;
+  }
+  return undefined;
 }
 
 /** Pilha do jogador num índice de zona. */
@@ -739,6 +790,331 @@ ok('cadastra, lista e remove cartas (localStorage)', () => {
   assert.equal(carregarCartas()[0]!.nome, 'Cavaleiro Teste');
   assert.match(cartaValida(carta, new Set([carta.id]))!, /já existe/);
   memoria.clear();
+});
+
+console.log('cartas de AÇÃO');
+ok('deck padrão traz cartas de efeito', () => {
+  const deck = deckPadrao();
+  const acoes = deck.filter((id) => CARTAS_POR_ID[id]?.tipo === 'acao');
+  const reacoes = deck.filter((id) => CARTAS_POR_ID[id]?.tipo === 'reacao');
+  assert.ok(acoes.length > 0, 'o deck precisa ter Ações');
+  assert.ok(reacoes.length > 0, 'o deck precisa ter Reações');
+  // 35 criaturas + 10 efeitos
+  assert.equal(deck.length, 45);
+});
+
+ok('Ação só é jogada na fase Principal', () => {
+  let s = dueloNovo({ deck: [deckDeCada('remover-1'), deckEscada()], seed: 3 });
+  const uid = primeiroUid(s, 0, 'remover-1');
+  s = comprarCarta(s, 0).estado; // principal
+  assert.equal(motivoNaoPodeUsar(s, 0, uid, { zona: 0 }), 'essa pilha está vazia');
+  s = proximaFase(s).estado; // combate
+  assert.match(motivoNaoPodeUsar(s, 0, uid, { zona: 0 })!, /fase Principal/);
+});
+
+ok('Reação só é jogada na fase de Combate', () => {
+  let s = dueloNovo({ deck: [deckDeCada('proteger-1', 'sertanejo'), deckEscada()], seed: 3 });
+  const uid = primeiroUid(s, 0, 'proteger-1');
+  s = comprarCarta(s, 0).estado; // principal
+  assert.match(motivoNaoPodeUsar(s, 0, uid, {})!, /fase de Combate/);
+});
+
+ok('remover N tira N levels do topo e manda pro Cemitério', () => {
+  // inimigo com pilha de 4 levels
+  let s0 = dueloNovo({ deck: [deckDe('remover-3'), deckEscada()], seed: 3 });
+  s0 = empilharNiveis(s0, 1, 0, niveisAte(3));
+  s0 = ateTerCarta(s0, 0, 'remover-3');
+  const uid = uidNaMao(s0, 0, 'remover-3');
+  const antes = pilha(s0, 1, 0).length;
+  assert.equal(antes, 4);
+
+  const s1 = usarCartaDeEfeito(s0, 0, uid, { zona: 0 }).estado;
+  assert.equal(pilha(s1, 1, 0).length, 1, 'tirou 3 dos 4');
+  assert.equal(
+    CARTAS_POR_ID[cartaIdDe(cartaAtiva(pilha(s1, 1, 0))!.uid)]!.nivel,
+    0,
+    'resta o nível 0',
+  );
+  assert.equal(s1.cementerio[1]!.length, 3, 'as 3 removidas foram para o Cemitério');
+  // a carta usada também foi para o Cemitério
+  assert.ok(s1.cementerio[0]!.includes(uid), 'a carta jogada vai para o Cemitério');
+  assert.ok(!s1.mao[0]!.includes(uid));
+});
+
+ok('remover 12 esvazia qualquer pilha', () => {
+  let s0 = dueloNovo({ deck: [deckDe('remover-12'), deckEscada()], seed: 3 });
+  s0 = empilharNiveis(s0, 1, 0, niveisAte(3));
+  s0 = ateTerCarta(s0, 0, 'remover-12');
+  const uid = uidNaMao(s0, 0, 'remover-12');
+  const s1 = usarCartaDeEfeito(s0, 0, uid, { zona: 0 }).estado;
+  assert.equal(pilha(s1, 1, 0).length, 0, 'a pilha ficou vazia');
+});
+
+ok('dano direto fere a vida e derruba o level', () => {
+  let s0 = dueloNovo({ deck: [deckDe('dano-direto-1'), deckEscada()], seed: 3 });
+  s0 = ateTerCarta(s0, 0, 'dano-direto-1');
+  const uid = uidNaMao(s0, 0, 'dano-direto-1');
+  const s1 = usarCartaDeEfeito(s0, 0, uid, {}).estado;
+  assert.equal(s1.lp[1], s0.lp[1]! - 400);
+  assert.equal(s1.levelPartida[1], LEVEL_INICIAL - 4);
+});
+
+ok('cavar level corta sem dano', () => {
+  let s0 = dueloNovo({ deck: [deckDe('cavar-level-2'), deckEscada()], seed: 3 });
+  s0 = ateTerCarta(s0, 0, 'cavar-level-2');
+  const uid = uidNaMao(s0, 0, 'cavar-level-2');
+  const s1 = usarCartaDeEfeito(s0, 0, uid, {}).estado;
+  assert.equal(s1.levelPartida[1], LEVEL_INICIAL - 2);
+  assert.equal(s1.danoRecebido[1], 0, 'sem dano acumulado');
+  assert.equal(s1.lp[1], s0.lp[1], 'sem dano na vida');
+});
+
+console.log('cartas de REAÇÃO');
+ok('proteger cobra 1 level da sua pilha e protege SUA carta', () => {
+  // jogador 0: pilha 0 com nivel 0 e 1 (a de cima vai ser protegida),
+  // pilha 1 tambem com carta (e ela e quem paga o custo da Reação)
+  // jogador 1: pilha com nivel 0 e 1 (vai atacar)
+  let s0 = dueloNovo({ deck: [deck12('proteger-1', 'sertanejo', 'golem-ferro'), deck12('sertanejo', 'golem-ferro')], seed: 3 });
+  s0 = empilharNiveis(s0, 0, 0, [0, 1]);
+  s0 = empilharNiveis(s0, 0, 1, [0, 1]);
+  s0 = empilharNiveis(s0, 1, 0, [0, 1]);
+  s0 = ateTerCarta(s0, 0, 'proteger-1');
+  const uid = uidNaMao(s0, 0, 'proteger-1');
+  s0 = proximaFase(s0).estado; // combate
+
+  const meuTopo = cartaAtiva(pilha(s0, 0, 0))!;
+  // Protege a pilha 0 e paga o custo com a pilha 1, senão a carta
+  // protegida seria removida pelo próprio custo.
+  assert.equal(motivoNaoPodeUsar(s0, 0, uid, { alvoUid: meuTopo.uid, pilhaCusto: 1 }), null);
+
+  const s1 = usarCartaDeEfeito(s0, 0, uid, { alvoUid: meuTopo.uid, pilhaCusto: 1 }).estado;
+  assert.ok(
+    acharNaPilha(s1, 0, meuTopo.uid)?.marcas?.some((m) => m.efeito === 'escudo'),
+    'a minha carta ficou com escudo',
+  );
+  assert.equal(pilha(s1, 0, 0).length, 2, 'a pilha protegida não perdeu o topo');
+  assert.equal(pilha(s1, 0, 1).length, 1, 'a pilha 1 pagou o custo');
+});
+
+ok('Reação recusa pagar o custo na própria pilha protegida', () => {
+  let s0 = dueloNovo({ deck: [deck12('proteger-1', 'sertanejo', 'golem-ferro'), deck12('sertanejo', 'golem-ferro')], seed: 3 });
+  s0 = empilharNiveis(s0, 0, 0, [0, 1]); // só uma pilha: a que vai ser protegida
+  s0 = empilharNiveis(s0, 1, 0, [0, 1]);
+  s0 = ateTerCarta(s0, 0, 'proteger-1');
+  const uid = uidNaMao(s0, 0, 'proteger-1');
+  s0 = proximaFase(s0).estado; // combate
+
+  const meuTopo = cartaAtiva(pilha(s0, 0, 0))!;
+  assert.match(
+    motivoNaoPodeUsar(s0, 0, uid, { alvoUid: meuTopo.uid, pilhaCusto: 0 })!,
+    /pague o custo em outra pilha/,
+    'a UI não pode deixar a proteção se pagar em sangue',
+  );
+});
+
+ok('Reação sem pilha para o custo é recusada antes de gastar a carta', () => {
+  let s0 = dueloNovo({ deck: [deck12('proteger-1', 'sertanejo', 'golem-ferro'), deck12('sertanejo', 'golem-ferro')], seed: 3 });
+  s0 = empilharNiveis(s0, 1, 0, [0, 1]); // só o INIMIGO tem carta
+  s0 = ateTerCarta(s0, 0, 'proteger-1');
+  const uid = uidNaMao(s0, 0, 'proteger-1');
+  s0 = proximaFase(s0).estado; // combate
+  assert.equal(
+    motivoNaoPodeUsar(s0, 0, uid, { alvoUid: 'nao-existe', pilhaCusto: 0 }),
+    'a pilha escolhida para pagar a Reação está vazia',
+  );
+});
+
+ok('carta protegida não pode ser atacada pelo oponente', () => {
+  let s0 = dueloNovo({ deck: [deck12('proteger-1', 'sertanejo', 'golem-ferro'), deck12('sertanejo', 'golem-ferro')], seed: 3 });
+  s0 = empilharNiveis(s0, 0, 0, [0, 1]); // minha carta (vou proteger)
+  s0 = empilharNiveis(s0, 0, 1, [0, 1]); // pilha extra para pagar o custo
+  s0 = empilharNiveis(s0, 1, 0, [0, 1]); // oponente ataca
+  s0 = ateTerCarta(s0, 0, 'proteger-1');
+  const uid = uidNaMao(s0, 0, 'proteger-1');
+  s0 = proximaFase(s0).estado; // combate
+
+  // proteção na pilha 0; o custo sai da pilha 1 (que também tem carta)
+  const meuTopo = cartaAtiva(pilha(s0, 0, 0))!;
+  const s1 = usarCartaDeEfeito(s0, 0, uid, { alvoUid: meuTopo.uid, pilhaCusto: 1 }).estado;
+  const meuAlvo = cartaAtiva(pilha(s1, 0, 0))!;
+  const atacante = cartaAtiva(pilha(s1, 1, 0))!;
+  assert.equal(meuAlvo.uid, meuTopo.uid, 'a pilha protegida não perdeu o topo');
+
+  const combateDoOponente = { ...s1, fase: 'combate' as const, vez: 1 as const };
+  assert.equal(
+    motivoNaoPodeAtacar(combateDoOponente, 1, atacante.uid, { tipo: 'carta', uid: meuAlvo.uid }),
+    'a criatura-alvo está protegida',
+  );
+});
+
+console.log('marcas e expiração');
+ok('remover deixa a marca de fratura na pilha que sobrou', () => {
+  // O ícone de fratura precisa aparecer na carta que virou a ativa
+  // depois da remoção — é o rastro visual do efeito na UI.
+  let s0 = dueloNovo({ deck: [deckDe('remover-1'), deckEscada()], seed: 3 });
+  s0 = empilharNiveis(s0, 1, 0, niveisAte(2)); // pilha de 3 levels
+  s0 = ateTerCarta(s0, 0, 'remover-1');
+  const uid = uidNaMao(s0, 0, 'remover-1');
+
+  const s1 = usarCartaDeEfeito(s0, 0, uid, { zona: 0 }).estado;
+  const restou = cartaAtiva(pilha(s1, 1, 0))!;
+  assert.ok(restou, 'a pilha não devia ficar vazia (tirou 1 de 3)');
+  assert.ok(
+    acharNaPilha(s1, 1, restou.uid)?.marcas?.some((m) => m.efeito === 'fratura'),
+    'a nova ativa ficou marcada com fratura',
+  );
+});
+
+ok('remover que esvazia a pilha não deixa marca órfã', () => {
+  let s0 = dueloNovo({ deck: [deckDe('remover-5'), deckEscada()], seed: 3 });
+  s0 = empilharNiveis(s0, 1, 0, [0, 1]); // 2 cartas
+  s0 = ateTerCarta(s0, 0, 'remover-5');
+  const uid = uidNaMao(s0, 0, 'remover-5');
+  const s1 = usarCartaDeEfeito(s0, 0, uid, { zona: 0 }).estado;
+  assert.equal(pilha(s1, 1, 0).length, 0, 'a pilha esvaziou');
+  assert.equal(
+    s1.campo[1]!.flat().filter((i) => i.marcas?.length).length,
+    0,
+    'nenhuma carta sobrou marcada',
+  );
+});
+
+ok('marca vive até a Finalização do turno seguinte', () => {
+  // Reação usada no combate do turno N: o escudo continua valendo
+  // no combate do turno N+1 (o do oponente) e some na Finalização dele.
+  let s0 = dueloNovo({ deck: [deck12('proteger-1', 'sertanejo', 'golem-ferro'), deck12('sertanejo', 'golem-ferro')], seed: 3 });
+  s0 = empilharNiveis(s0, 0, 0, [0, 1]); // minha carta, pilha 0
+  s0 = empilharNiveis(s0, 0, 1, [0, 1]); // pilha 1 paga o custo
+  s0 = empilharNiveis(s0, 1, 0, [0, 1]); // oponente
+  s0 = ateTerCarta(s0, 0, 'proteger-1');
+  const uid = uidNaMao(s0, 0, 'proteger-1');
+  s0 = proximaFase(s0).estado; // combate do jogador 0
+  const meuAlvo = cartaAtiva(pilha(s0, 0, 0))!;
+  const s1 = usarCartaDeEfeito(s0, 0, uid, { alvoUid: meuAlvo.uid, pilhaCusto: 1 }).estado;
+
+  // avança até a Finalização do MESMO turno: a marca continua
+  const s2 = proximaFase(s1).estado; // finalizacao
+  assert.equal(s2.fase, 'finalizacao');
+  assert.ok(
+    acharNaPilha(s2, 0, meuAlvo.uid)?.marcas?.some((m) => m.efeito === 'escudo'),
+    'a marca sobrevive à Finalização do próprio turno',
+  );
+
+  // turno do oponente: o escudo ainda segura no combate dele
+  let s3 = proximaFase(s2).estado; // fim
+  s3 = proximaFase(s3).estado; // termina turno -> vez 1, compra
+  s3 = comprarCarta(s3, 1).estado; // principal
+  s3 = proximaFase(s3).estado; // combate do oponente
+  const atacante = cartaAtiva(pilha(s3, 1, 0))!;
+  assert.equal(meuAlvo.uid, cartaAtiva(pilha(s3, 0, 0))!.uid, 'a carta segue no topo');
+  assert.equal(
+    motivoNaoPodeAtacar(s3, 1, atacante.uid, { tipo: 'carta', uid: meuAlvo.uid }),
+    'a criatura-alvo está protegida',
+    'o escudo segura o ataque no combate do turno seguinte',
+  );
+
+  // finalização seguinte: agora some
+  const s4 = proximaFase(s3).estado; // finalizacao
+  assert.ok(
+    !acharNaPilha(s4, 0, meuAlvo.uid)?.marcas?.some((m) => m.efeito === 'escudo'),
+    'a marca expirou na Finalização seguinte',
+  );
+});
+
+ok('abrir-vida libera o ataque direto com criaturas em campo', () => {
+  let s0 = dueloNovo({ deck: [deck12('abrir-vida', 'sertanejo', 'golem-ferro'), deck12('sertanejo', 'golem-ferro')], seed: 3 });
+  s0 = empilharNiveis(s0, 0, 0, [0]);
+  s0 = empilharNiveis(s0, 1, 0, [0]); // inimigo tem criatura
+  s0 = ateTerCarta(s0, 0, 'abrir-vida');
+  const uid = uidNaMao(s0, 0, 'abrir-vida');
+
+  const atacante = cartaAtiva(pilha(s0, 0, 0))!;
+  const s1 = { ...s0, fase: 'combate' as const };
+  assert.match(motivoNaoPodeAtacar(s1, 0, atacante.uid, { tipo: 'jogador' })!, /criaturas no campo/);
+
+  const s2 = usarCartaDeEfeito(s0, 0, uid, {}).estado;
+  const combate = { ...s2, fase: 'combate' as const };
+  assert.equal(motivoNaoPodeAtacar(combate, 0, atacante.uid, { tipo: 'jogador' }), null);
+  assert.ok(s2.marcas[0]!.some((m) => m.efeito === 'abrir-vida'), 'a marca ficou no jogador');
+});
+
+ok('silenciar impede o ataque', () => {
+  let s0 = dueloNovo({ deck: [deck12('silenciar', 'sertanejo', 'golem-ferro'), deck12('sertanejo', 'golem-ferro')], seed: 3 });
+  s0 = empilharNiveis(s0, 0, 0, [0]);
+  s0 = empilharNiveis(s0, 1, 0, [0, 1]);
+  s0 = ateTerCarta(s0, 0, 'silenciar');
+  const uid = uidNaMao(s0, 0, 'silenciar');
+  const alvo = cartaAtiva(pilha(s0, 1, 0))!;
+  const s1 = usarCartaDeEfeito(s0, 0, uid, { alvoUid: alvo.uid }).estado;
+  const combate = { ...s1, fase: 'combate' as const, vez: 1 as const };
+  assert.equal(motivoNaoPodeAtacar(combate, 1, alvo.uid, { tipo: 'jogador' }), 'essa criatura está silenciada');
+});
+
+console.log('efeitos não são criaturas');
+ok('Ação e Reação não podem ser invocadas na pilha', () => {
+  let s = atePrincipal(dueloNovo({ deck: [deckDeCada('remover-1', 'sertanejo'), deckEscada()], seed: 3 }));
+  const acao = s.mao[0]!.find((u) => cartaIdDe(u) === 'remover-1')!;
+  assert.ok(acao);
+  assert.match(motivoNaoPodeInvocar(s, 0, acao, 0)!, /carta de Ação não se invoca/);
+});
+
+console.log('cartas cadastradas pelo Admin');
+ok('registrarCartas põe a carta nova no índice do core', () => {
+  // Sem isto, uma carta criada no Admin ia para o campo e o core
+  // não achava o ATK dela — o duelo quebraria no primeiro uso.
+  const antes = Object.keys(CARTAS_POR_ID).length;
+  registrarCartas([
+    {
+      id: 'criatura-de-teste',
+      nome: 'Criatura de teste',
+      descricao: 'Cadastrada pelo Admin.',
+      raridade: 'comum',
+      nivel: 0,
+      atk: 1234,
+      def: 567,
+      eva: 0,
+    },
+  ]);
+  assert.equal(Object.keys(CARTAS_POR_ID).length, antes + 1);
+  assert.equal(CARTAS_POR_ID['criatura-de-teste']!.atk, 1234);
+
+  // E o jogo aceita a carta no baralho e na pilha sem quebrar:
+  let s = atePrincipal(dueloNovo({ deck: [deckDeCada('criatura-de-teste'), deckEscada()], seed: 5 }));
+  const uid = uidNaMao(s, 0, 'criatura-de-teste');
+  assert.ok(uid, 'a carta do Admin precisa ser comprável');
+  s = invocar(s, 0, uid, 0).estado;
+  const noCampo = cartaAtiva(pilha(s, 0, 0))!;
+  assert.equal(CARTAS_POR_ID[noCampo.cartaId]!.atk, 1234, 'o ATK é lido do índice');
+});
+
+ok('registrarCartas não sobrescreve carta oficial com o mesmo id', () => {
+  const oficial = CARTAS_POR_ID['sertanejo']!;
+  registrarCartas([
+    { id: 'sertanejo', nome: 'Intruso', descricao: 'x', raridade: 'lendario', nivel: 8, atk: 1, def: 1, eva: 0 },
+  ]);
+  assert.equal(CARTAS_POR_ID['sertanejo']!.atk, oficial.atk, 'o oficial vence');
+});
+
+ok('cartaValida aceita Ação/Reação e recusa mecânica inexistente', () => {
+  const ids = new Set(['sertanejo']);
+  assert.equal(
+    cartaValida(
+      { nome: 'Minha Reação', tipo: 'reacao', nivel: 0, cartaMecanica: { mecanica: 'proteger', valor: 2, alvo: 'carta-sua', efeitos: ['escudo'], faixa: 'defesa' } },
+      ids,
+    ),
+    null,
+  );
+  assert.match(
+    cartaValida(
+      { nome: 'Mecânica Ruim', tipo: 'acao', nivel: 0, cartaMecanica: { mecanica: 'nao-existe' as never, valor: 1, alvo: 'pilha-inimiga', efeitos: [], faixa: 'fraca' } },
+      ids,
+    ),
+    /mecânica desconhecida/,
+  );
+  assert.match(
+    cartaValida({ nome: 'Sem Mecânica', tipo: 'acao', nivel: 0 }, ids),
+    /escolha a mecânica/,
+  );
 });
 
 console.log(`\n${passou} testes passaram`);

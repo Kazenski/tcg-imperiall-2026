@@ -49,6 +49,7 @@
  */
 
 import { CARTAS_POR_ID } from '../data/cartas.ts';
+import { podeUsar, resolverMecanica, temMarca, temMarcaNoJogador, type EscolhaAlvo } from './efeitos.ts';
 import { rngCriar } from './rng.ts';
 import {
   DECK_MAXIMO,
@@ -66,6 +67,7 @@ import {
   type EventoDuelo,
   type Instancia,
   type Jogador,
+  type Marca,
   type Par,
   type Pilha,
 } from './types.ts';
@@ -142,6 +144,8 @@ export function dueloNovo(opcao: OpcaoDuelo): EstadoDuelo {
       Array.from({ length: ZONAS }, (): Pilha => []),
     ],
     cementerio: [[], []],
+    marcas: [[], []],
+    jogadas: [[], []],
     rngState: seed,
     log: [],
     vencedor: null,
@@ -219,6 +223,13 @@ export function proximaFase(
   }
 
   s.fase = FASES_ORDEM[indice + 1]!;
+
+  // Entrando na Finalização, as marcas vencidas são varridas: uma
+  // marca criada no turno T vive até a Finalização de T+1, que é
+  // quando some. É isso que faz o escudo usado no combate do seu
+  // turno continuar valendo no combate do turno do oponente.
+  if (s.fase === 'finalizacao') varrerMarcas(s);
+
   return {
     estado: s,
     evento: registrar(s, {
@@ -226,6 +237,39 @@ export function proximaFase(
       mensagem: `Fase de ${s.fase}.`,
     }),
   };
+}
+
+/**
+ * Remove as marcas cujo prazo venceu. O rastro "espelho" é
+ * permanente (o modo copiado fica até o fim do duelo), então só o
+ * ícone sai — o modo copiado continua valendo.
+ */
+function varrerMarcas(s: EstadoDuelo): void {
+  let vencidas = 0;
+  for (const jogador of [0, 1] as const) {
+    const antesJogador = s.marcas[jogador]!.length;
+    s.marcas[jogador] = s.marcas[jogador]!.filter(
+      (m) => m.efeito === 'espelho' || m.expiraEmTurno > s.turno,
+    );
+    vencidas += antesJogador - s.marcas[jogador]!.length;
+
+    for (const pilha of s.campo[jogador]!) {
+      for (const instancia of pilha) {
+        if (!instancia.marcas?.length) continue;
+        const antes = instancia.marcas.length;
+        instancia.marcas = instancia.marcas.filter(
+          (m) => m.efeito === 'espelho' || m.expiraEmTurno > s.turno,
+        );
+        vencidas += antes - instancia.marcas.length;
+      }
+    }
+  }
+  if (vencidas > 0) {
+    registrar(s, {
+      tipo: 'fase',
+      mensagem: `${vencidas} efeito(s) de carta expiraram na finalização.`,
+    });
+  }
 }
 
 /** Prepara o turno do jogador da vez (fase de compra). */
@@ -294,6 +338,8 @@ export function motivoNaoPodeInvocar(
   if (!estado.mao[jogador]!.includes(uid)) return 'essa carta não está na sua mão';
   const carta = CARTAS_POR_ID[cartaIdDe(uid)];
   if (!carta) return 'carta desconhecida';
+  if (carta.tipo === 'acao') return 'carta de Ação não se invoca: ela é jogada da mão';
+  if (carta.tipo === 'reacao') return 'carta de Reação não se invoca: ela é jogada da mão';
   if (estado.levelPartida[jogador]! < carta.nivel) {
     return `seu level na partida (${estado.levelPartida[jogador]}) não alcança o nível ${carta.nivel} da carta`;
   }
@@ -415,6 +461,10 @@ export function motivoNaoPodeAtacar(
   if (!atacante) return 'essa criatura não está em nenhuma das suas pilhas';
   if (!atacante.ativa) return 'só a carta de cima da pilha ataca';
   if (atacante.instancia.atacou) return 'essa criatura já atacou neste turno';
+  if (temMarca(atacante.instancia, 'silencio')) return 'essa criatura está silenciada';
+  if (temMarca(atacante.instancia, 'espelho') && atacante.instancia.modo === 'defesa') {
+    return 'essa criatura está desarmada';
+  }
   if (atacante.instancia.modo !== 'ataque') {
     return 'criatura em modo defesa não ataca';
   }
@@ -422,12 +472,47 @@ export function motivoNaoPodeAtacar(
     const alvoCarta = instanciaNoCampo(estado, adversario(jogador), alvo.uid);
     if (!alvoCarta) return 'a criatura-alvo não está em nenhuma pilha inimiga';
     if (!alvoCarta.ativa) return 'a criatura-alvo não está no topo da pilha';
+    if (temMarca(alvoCarta.instancia, 'escudo')) return 'a criatura-alvo está protegida';
   }
-  // Regra: direto só com o campo inimigo totalmente vazio.
+  // Regra: direto só com o campo inimigo totalmente vazio, a menos
+  // que o jogador tenha a marca "abrir-vida".
   if (alvo.tipo === 'jogador' && temCriatura(estado, adversario(jogador))) {
-    return 'não pode atacar a vida do inimigo enquanto ele tiver criaturas no campo';
+    if (!temMarcaNoJogador(estado, jogador, 'abrir-vida')) {
+      return 'não pode atacar a vida do inimigo enquanto ele tiver criaturas no campo';
+    }
   }
   return null;
+}
+
+/**
+ * Jogar uma carta de Ação (fase Principal) ou de Reação (fase
+ * Combate) da mão, com o alvo escolhido. A carta vai para o
+ * Cemitério depois de resolver.
+ */
+export function usarCartaDeEfeito(
+  estado: EstadoDuelo,
+  jogador: Jogador,
+  uid: string,
+  escolha: EscolhaAlvo,
+): { estado: EstadoDuelo; evento: EventoDuelo } {
+  const motivo = podeUsar(estado, jogador, uid, escolha);
+  if (motivo) throw new Error(motivo);
+  return resolverMecanica(estado, jogador, uid, escolha);
+}
+
+/** A carta de efeito pode ser usada agora com algum alvo? */
+export function motivoNaoPodeUsar(
+  estado: EstadoDuelo,
+  jogador: Jogador,
+  uid: string,
+  escolha: EscolhaAlvo,
+): string | null {
+  return podeUsar(estado, jogador, uid, escolha);
+}
+
+/** Marcas de uma carta (a UI usa para desenhar os ícones). */
+export function marcasDe(i: Instancia): Marca[] {
+  return i.marcas ?? [];
 }
 
 function destruir(

@@ -16,6 +16,107 @@ import type { Rarity } from './raridade.ts';
  *   eva    RESERVADA para cartas de efeitos especiais
  *          (mágicas/armadilhas) — não afeta o combate.
  */
+/**
+ * Que tipo de carta é.
+ *
+ *   criatura  tem ATK/DEF/EVA e vive empilhada no campo.
+ *   acao      não tem ATK/DEF/EVA; é jogada da mão na fase
+ *             Principal, resolve um efeito em um alvo e vai
+ *             para o Cemitério.
+ *   reacao    não tem ATK/DEF/EVA; só pode ser jogada da mão na
+ *             fase de Combate, defendendo um alvo. Paga 1 level
+ *             de uma pilha sua.
+ */
+export type TipoCarta = 'criatura' | 'acao' | 'reacao';
+
+/**
+ * O que uma marca faz na carta (ou no jogador) que está marcado.
+ *
+ * As marcas são o rastro visual de uma carta de Ação ou Reação:
+ * ficam como um ícone sobre a carta alvo e somem sozinhas.
+ */
+export type EfeitoMarca =
+  /** A carta não pode ser alvo de ataque neste ciclo. */
+  | 'escudo'
+  /** A carta não pode atacar neste ciclo. */
+  | 'silencio'
+  /** A pilha não pode receber cartas novas neste ciclo. */
+  | 'trava'
+  /** O modo da pilha foi espelhado do seu: ataque vira defesa. */
+  | 'espelho'
+  /** A pilha foi esmagada: fica registrada a remoção de levels. */
+  | 'fratura'
+  /** O jogador pode atacar a vida mesmo com criaturas em campo. */
+  | 'abrir-vida';
+
+/** Alvos que uma mecânica aceita. */
+export type AlvoMecanica =
+  | 'pilha-inimiga'
+  | 'pilha-sua'
+  | 'carta-inimiga'
+  | 'carta-sua'
+  | 'jogador-inimigo'
+  | 'mao-sua'
+  | 'cemiterio-seu';
+
+/**
+ * Um efeito jogável. A mecânica é o COMO funciona; `valor` é o
+ * QUANTO (quantos levels remover, quanto de dano, quantos alvos
+ * proteger). O catálogo legível de cada uma fica em
+ * `data/mecanicas.ts`; a execução fica em `core/efeitos.ts`.
+ */
+export type Mecanica =
+  // --- pilha inimiga ---
+  | 'remover-niveis'
+  | 'rodar-pilha'
+  | 'trocar-topo'
+  | 'silenciar'
+  | 'desarmar'
+  | 'espelhar-modo'
+  // --- pilha sua ---
+  | 'empilhar-rapido'
+  | 'ressuscitar'
+  // --- jogador / vida ---
+  | 'dano-direto'
+  | 'cavar-level'
+  | 'congelar-level'
+  | 'abrir-vida'
+  // --- Reactions ---
+  | 'proteger';
+
+/**
+ * Faixa de poder de uma mecânica. Serve para equilibrar e para
+ * explicar no tutorial o que cada faixa faz.
+ */
+export type Faixa =
+  | 'fraca'
+  | 'media'
+  | 'forte'
+  | 'devastadora'
+  | 'defesa'
+  | 'utilitaria';
+
+export interface CartaMecanica {
+  mecanica: Mecanica;
+  /** Magnitude: N em remover-niveis, dano em dano-direto, etc. */
+  valor: number;
+  alvo: AlvoMecanica;
+  /** Marcas deixadas no alvo depois de resolver. */
+  efeitos: EfeitoMarca[];
+  faixa: Faixa;
+  /**
+   * Se true, um mesmo jogador não pode ter duas marcas iguais
+   * ativas no mesmo alvo (evita empilhar escudos infinitos).
+   */
+  unico?: boolean;
+}
+
+/**
+ * Uma carta do TCG.
+ *
+ * Criaturas têm ATK/DEF/EVA; cartas de Ação e Reação não têm
+ * nenhum dos três (ficam zerados) e carregam `mecanica`.
+ */
 export interface CartaTCG {
   id: string;
   nome: string;
@@ -25,12 +126,32 @@ export interface CartaTCG {
   nivel: number;
   atk: number;
   def: number;
-  /** 0 a 100 (só cartas de efeito futuro consomem). */
+  /** 0 a 100. Reservada para efeitos futuros. */
   eva: number;
+  /** Opcional: ausente = criatura. */
+  tipo?: TipoCarta;
+  /** Opcional: presente só em ação/reação. */
+  cartaMecanica?: CartaMecanica;
 }
 
 /** Posição de uma criatura em campo. */
 export type Modo = 'ataque' | 'defesa';
+
+/**
+ * Um rastro deixado por uma carta de Ação ou Reação.
+ *
+ * A marca fica presa na carta (ou no jogador) e tem prazo: some
+ * sozinha na fase Finalização de `expiraEmTurno`. Por isso uma
+ * proteção usada no combate do turno 3 continua valendo durante o
+ * combate do turno 4 — que é o que o jogador espera.
+ */
+export interface Marca {
+  /** Carta que criou a marca. */
+  cartaId: string;
+  efeito: EfeitoMarca;
+  /** Remove na Finalização deste turno. */
+  expiraEmTurno: number;
+}
 
 /** Uma carta em jogo: uid único (para rastrear posição na mão/campo). */
 export interface Instancia {
@@ -40,6 +161,20 @@ export interface Instancia {
   /** Já atacou neste turno? */
   atacou: boolean;
   modo: Modo;
+  /** Marcas ativas sobre esta carta. */
+  marcas?: Marca[];
+}
+
+/** Uma carta de Ação ou Reação jogada da mão (ainda em resolução). */
+export interface CartaJogada {
+  uid: string;
+  cartaId: string;
+  /** Zona da pilha alvo, quando a mecânica age sobre pilha. */
+  zona?: number;
+  /** Carta alvo, quando a mecânica age sobre carta. */
+  alvoUid?: string;
+  /** Turno em que foi jogada (o prazo nasce daqui). */
+  turno: number;
 }
 
 /**
@@ -108,8 +243,18 @@ export interface EstadoDuelo {
    * para cima (último índice) — só a carta do topo é ativa.
    */
   campo: Par<Pilha[]>;
-  /** uids das cartas destruídas. */
+  /** uids das cartas destruídas ou descartadas. */
   cementerio: Par<string[]>;
+  /**
+   * Marcas presas ao JOGADOR (e não a uma carta). Usada pela
+   * mecânica "abrir-vida", cujo alvo é a vida, não uma carta.
+   */
+  marcas: Par<Marca[]>;
+  /**
+   * Turno em que cada jogador usou sua última carta de Reação
+   * (não há limite, mas serve para o log e para efeitos futuros).
+   */
+  jogadas: Par<CartaJogada[]>;
   /** Estado interno do RNG (seed corrente). */
   rngState: number;
   log: string[];
@@ -132,6 +277,7 @@ export interface EventoDuelo {
     | 'turno'
     | 'draw'
     | 'fase'
+    | 'acao'
     | 'fim';
   mensagem: string;
 }
