@@ -1,0 +1,20 @@
+{
+  "name": "tcg-imperiall-2026",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "TCG do universo Imperiall: criaturas com ATK, DEF e EVA em duelos por turnos. Web (PWA).",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview --port 4173",
+    "typecheck": "tsc --noEmit",
+    "test": "node testes/rodar.mjs"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "typescript": "^5.7.2",
+    "vite": "^6.0.7",
+    "vite-plugin-pwa": "^0.21.1"
+  }
+}
