@@ -1,3 +1,4 @@
+import { resolve } from 'node:path';
 import { defineConfig } from 'vite';
 import { VitePWA } from 'vite-plugin-pwa';
 
@@ -9,6 +10,16 @@ export default defineConfig({
   base,
   build: {
     target: 'es2020',
+    // Três páginas: a inicial (`/`), o guia (`/tutorial.html`) e o
+    // duelo (`/jogo.html`). Todas precisam entrar no build para o
+    // GitHub Pages servir cada uma no seu endereço.
+    rollupOptions: {
+      input: {
+        main: resolve(import.meta.dirname, 'index.html'),
+        tutorial: resolve(import.meta.dirname, 'tutorial.html'),
+        jogo: resolve(import.meta.dirname, 'jogo.html'),
+      },
+    },
   },
   server: {
     host: true,
@@ -35,9 +46,13 @@ export default defineConfig({
         categories: ['games', 'entertainment'],
       },
       workbox: {
-        globPatterns: ['**/*.{js,css,html,png,svg,webp,woff2}'],
-        // Game is fully static: cache everything so it survives offline launches.
-        navigateFallback: 'index.html',
+        globPatterns: ['**/*.{js,css,html,png,jpg,svg,webp,woff2}'],
+        /*
+         * Sem `navigateFallback`: o site tem três páginas reais
+         * (inicial, tutorial e jogo) e o fallback para index.html
+         * sequestraria /tutorial.html e /jogo.html, servindo a
+         * inicial no lugar delas.
+         */
         cleanupOutdatedCaches: true,
         clientsClaim: true,
       },

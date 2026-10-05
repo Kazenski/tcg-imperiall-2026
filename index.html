@@ -4,10 +4,116 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <meta name="theme-color" content="#0f1116" />
-    <title>Imperiall TCG</title>
+    <title>Imperiall TCG — duelo de cartas em pilhas</title>
+    <meta
+      name="description"
+      content="Duelo de cartas do universo Imperiall: criaturas se empilham por nível, só a carta de cima ataca. Aprenda as regras e jogue."
+    />
+    <link rel="stylesheet" href="/src/doc.css" />
   </head>
-  <body>
-    <div id="app"></div>
-    <script type="module" src="/src/main.ts"></script>
+  <body class="doc">
+    <header class="doc-topo">
+      <div class="interno">
+        <a class="doc-logo" href="./">Imperiall TCG</a>
+        <nav>
+          <a href="./tutorial.html">Como jogar</a>
+          <a href="./tutorial.html#pilhas">Pilhas</a>
+          <a href="./tutorial.html#roadmap">Roadmap</a>
+          <a href="./jogo.html">Jogar</a>
+        </nav>
+      </div>
+    </header>
+
+    <main class="doc-shell">
+      <section class="doc-hero">
+        <span class="selo">Duelo de cartas</span>
+        <h1>Para ter o Imperador<br />em campo, você sustenta<br />oito cartas embaixo dele.</h1>
+        <p>
+          No Imperiall TCG a força não vem de sorteio. Cada zona do campo é uma
+          <strong>pilha</strong>, e você sobe um nível por vez: um nível 0 no fundo, um 1 em cima,
+          um 2 acima disso. Só a carta de cima ataca — as de baixo ficam guardadas esperando.
+        </p>
+        <div class="doc-acoes">
+          <a class="btn btn-primario" href="./jogo.html">▶ Jogar agora</a>
+          <a class="btn" href="./tutorial.html">Ler o guia completo</a>
+        </div>
+      </section>
+
+      <section class="doc-secao">
+        <h2>O que você decide em cada turno</h2>
+        <div class="termos">
+          <div class="termo">
+            <dt>Uma invocação por turno</dt>
+            <dd>Subir um nível custa um turno inteiro. Construir uma pilha até o nível 8 leva nove turnos de paciência.</dd>
+          </div>
+          <div class="termo">
+            <dt>Defender ou atacar</dt>
+            <dd>Cada carta ativa alterna entre ataque e defesa. Em defesa não causa dano, mas também não leva.</dd>
+          </div>
+          <div class="termo">
+            <dt>A vida só abre com o campo vazio</dt>
+            <dd>Havendo qualquer criatura no campo do oponente, o ataque direto na vida é proibido.</dd>
+          </div>
+          <div class="termo">
+            <dt>Seu level só desce</dt>
+            <dd>A cada 100 de dano recebido, você perde um nível. Cartas de nível 0 existem para você nunca ficar sem jogada.</dd>
+          </div>
+        </div>
+      </section>
+
+      <section class="doc-secao">
+        <h2>A mesa</h2>
+        <figure class="shot">
+          <img src="/docs/10-board-completo.png" alt="A mesa completa do duelo" />
+          <figcaption>
+            Placar, log com as regras, os dois campos com as pilhas, sua mão e os detalhes de
+            qualquer carta em que você clicar.
+          </figcaption>
+        </figure>
+      </section>
+
+      <section class="doc-secao">
+        <h2>Quatro coisas para saber antes do primeiro duelo</h2>
+        <ol class="passos">
+          <li>
+            <div>
+              <b>Compre clicando no seu baralho</b>
+              Ele fica à direita da mesa. Na fase de compra, um clique e a carta vai para a mão.
+            </div>
+          </li>
+          <li>
+            <div>
+              <b>Empilhe na fase Principal</b>
+              Clique numa carta da mão e depois na pilha que vai receber. Se só uma pilha aceitar
+              aquele nível, ela empilha sozinha.
+            </div>
+          </li>
+          <li>
+            <div>
+              <b>Atacque na fase Combate</b>
+              Clique na sua carta ativa — uma seta aparece mostrando o alvo — e então clique no alvo:
+              uma carta do oponente ou a vida dele, se o campo estiver vazio.
+            </div>
+          </li>
+          <li>
+            <div>
+              <b>Clique em qualquer carta para ler</b>
+              Da mão, do topo da pilha ou de uma carta enterrada. A lateral direita mostra tudo:
+              números, raridade e a situação da carta na pilha.
+            </div>
+          </li>
+        </ol>
+        <div class="doc-acoes" style="margin-top: 28px">
+          <a class="btn btn-primario" href="./jogo.html">▶ Começar o duelo</a>
+          <a class="btn" href="./tutorial.html">Guia detalhado</a>
+        </div>
+      </section>
+
+      <footer class="doc-rodape">
+        <span>Imperiall TCG — criaturas com ATK, DEF e EVA, empilhadas por nível.</span>
+        <a href="./tutorial.html#roadmap">O que vem pela frente →</a>
+        <a href="./jogo.html">Jogar →</a>
+      </footer>
+    </main>
   </body>
 </html>

@@ -1,0 +1,576 @@
+/*
+ * CSS das páginas de conteúdo (inicial + tutorial).
+ *
+ * Separado de `styles.css`, que é todo do jogo. Aqui só importa
+ * ler bem: coluna de texto medida, blocos de imagem, tabelas e o
+ * roadmap.
+ */
+
+@import './styles.css';
+
+:root {
+  --doc-bg: #0d0f14;
+  --card: #161923;
+  --card-2: #1c2029;
+  --linha: #2b3140;
+  --texto: #e8e4d8;
+  --suave: #a6adbb;
+  --ouro: #c8a24a;
+  --atk: #e0533d;
+  --def: #4a9de0;
+  --eva: #7dd87d;
+  --ok: #57b85a;
+}
+
+body.doc {
+  background: var(--doc-bg);
+  color: var(--texto);
+  font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+  line-height: 1.65;
+}
+
+.doc-shell {
+  max-width: 860px;
+  margin: 0 auto;
+  padding: 0 20px 80px;
+}
+
+/* --- topo fixo ------------------------------------------------------- */
+
+.doc-topo {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  background: rgba(13, 15, 20, 0.92);
+  backdrop-filter: blur(8px);
+  border-bottom: 1px solid var(--linha);
+}
+
+.doc-topo .interno {
+  max-width: 860px;
+  margin: 0 auto;
+  padding: 12px 20px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.doc-logo {
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  font-size: 0.9rem;
+  color: var(--ouro);
+  text-decoration: none;
+}
+
+.doc-topo nav {
+  margin-left: auto;
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.doc-topo nav a {
+  color: var(--suave);
+  text-decoration: none;
+  font-size: 0.82rem;
+  padding: 5px 10px;
+  border-radius: 6px;
+  border: 1px solid transparent;
+}
+
+.doc-topo nav a:hover {
+  color: var(--texto);
+  border-color: var(--linha);
+}
+
+/* --- botões ---------------------------------------------------------- */
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 11px 20px;
+  border-radius: 9px;
+  border: 1px solid var(--linha);
+  background: var(--card);
+  color: var(--texto);
+  text-decoration: none;
+  font-weight: 600;
+  font-size: 0.92rem;
+  cursor: pointer;
+}
+
+.btn:hover {
+  border-color: var(--ouro);
+}
+
+.btn-primario {
+  background: var(--ouro);
+  color: #14100a;
+  border-color: var(--ouro);
+}
+
+.btn-primario:hover {
+  filter: brightness(1.08);
+}
+
+/* --- herói ----------------------------------------------------------- */
+
+.doc-hero {
+  padding: 64px 0 40px;
+  border-bottom: 1px solid var(--linha);
+}
+
+.doc-hero .selo {
+  display: inline-block;
+  font-size: 0.72rem;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--ouro);
+  border: 1px solid #c8a24a55;
+  border-radius: 999px;
+  padding: 4px 12px;
+  margin-bottom: 18px;
+}
+
+.doc-hero h1 {
+  font-size: clamp(2rem, 6vw, 3.1rem);
+  line-height: 1.1;
+  margin: 0 0 16px;
+  letter-spacing: -0.02em;
+}
+
+.doc-hero p {
+  font-size: 1.08rem;
+  color: var(--suave);
+  max-width: 60ch;
+  margin: 0 0 28px;
+}
+
+.doc-acoes {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+/* --- seções ---------------------------------------------------------- */
+
+.doc-secao {
+  padding: 44px 0;
+  border-bottom: 1px solid var(--linha);
+}
+
+.doc-secao:last-of-type {
+  border-bottom: 0;
+}
+
+.doc-secao > h2 {
+  font-size: 1.5rem;
+  margin: 0 0 6px;
+  letter-spacing: -0.01em;
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+}
+
+.doc-secao > h2 .num {
+  font-size: 0.8rem;
+  color: var(--ouro);
+  border: 1px solid #c8a24a55;
+  border-radius: 6px;
+  padding: 2px 8px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  flex-shrink: 0;
+}
+
+.doc-secao > .lead {
+  color: var(--suave);
+  max-width: 68ch;
+  margin: 0 0 24px;
+}
+
+.doc-secao h3 {
+  font-size: 1.08rem;
+  margin: 28px 0 10px;
+}
+
+/* --- blocos de imagem ------------------------------------------------ */
+
+.shot {
+  margin: 24px 0;
+  border: 1px solid var(--linha);
+  border-radius: 12px;
+  overflow: hidden;
+  background: #0b0d11;
+}
+
+.shot img {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.shot figcaption {
+  padding: 10px 14px;
+  font-size: 0.82rem;
+  color: var(--suave);
+  border-top: 1px solid var(--linha);
+  background: var(--card);
+}
+
+.shot-lado {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 22px;
+  align-items: start;
+}
+
+.shot-lado .shot {
+  margin: 0;
+  max-width: 240px;
+  justify-self: center;
+}
+
+.legenda-flutuante {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 10px;
+}
+
+.legenda-flutuante li {
+  display: grid;
+  grid-template-columns: 22px 1fr;
+  gap: 10px;
+  font-size: 0.9rem;
+  color: var(--suave);
+}
+
+.legenda-flutuante .pin {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: #c8a24a22;
+  border: 1px solid #c8a24a88;
+  color: var(--ouro);
+  font-size: 0.72rem;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* --- caixas de destaque --------------------------------------------- */
+
+.aviso {
+  border: 1px solid #c8a24a44;
+  border-left: 3px solid var(--ouro);
+  background: #c8a24a0d;
+  border-radius: 10px;
+  padding: 16px 18px;
+  margin: 22px 0;
+}
+
+.aviso strong {
+  color: var(--ouro);
+}
+
+.aviso.perigo {
+  border-color: #e0533d44;
+  border-left-color: var(--atk);
+  background: #e0533d0d;
+}
+
+.aviso.perigo strong {
+  color: #ff8a75;
+}
+
+.aviso p:first-child {
+  margin-top: 0;
+}
+
+.aviso p:last-child {
+  margin-bottom: 0;
+}
+
+/* --- passos numerados ------------------------------------------------ */
+
+.passos {
+  counter-reset: passo;
+  list-style: none;
+  margin: 22px 0;
+  padding: 0;
+  display: grid;
+  gap: 14px;
+}
+
+.passos li {
+  counter-increment: passo;
+  display: grid;
+  grid-template-columns: 30px 1fr;
+  gap: 14px;
+  align-items: start;
+}
+
+.passos li::before {
+  content: counter(passo);
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background: var(--ouro);
+  color: #14100a;
+  font-weight: 800;
+  font-size: 0.85rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.passos b {
+  display: block;
+  margin-bottom: 2px;
+}
+
+/* --- tabelas --------------------------------------------------------- */
+
+.tabela-envolve {
+  overflow-x: auto;
+  margin: 22px 0;
+  border: 1px solid var(--linha);
+  border-radius: 10px;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.88rem;
+  min-width: 520px;
+}
+
+th,
+td {
+  text-align: left;
+  padding: 11px 14px;
+  border-bottom: 1px solid var(--linha);
+  vertical-align: top;
+}
+
+th {
+  background: var(--card-2);
+  font-size: 0.72rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--suave);
+  font-weight: 700;
+}
+
+tr:last-child td {
+  border-bottom: 0;
+}
+
+tbody tr:hover {
+  background: #ffffff05;
+}
+
+td .atk {
+  color: var(--atk);
+  font-weight: 700;
+}
+
+td .def {
+  color: var(--def);
+  font-weight: 700;
+}
+
+.resultado {
+  font-weight: 700;
+  color: var(--ouro);
+}
+
+/* --- grade de termos ------------------------------------------------- */
+
+.termos {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 14px;
+  margin: 22px 0;
+}
+
+.termo {
+  border: 1px solid var(--linha);
+  background: var(--card);
+  border-radius: 10px;
+  padding: 14px 16px;
+}
+
+.termo dt {
+  font-weight: 700;
+  color: var(--ouro);
+  font-size: 0.92rem;
+  margin-bottom: 4px;
+}
+
+.termo dd {
+  margin: 0;
+  font-size: 0.85rem;
+  color: var(--suave);
+  line-height: 1.55;
+}
+
+/* --- roadmap --------------------------------------------------------- */
+
+.fases- roadmap {
+  display: grid;
+  gap: 18px;
+  margin: 26px 0;
+}
+
+.trilho {
+  display: grid;
+  gap: 16px;
+}
+
+.trilho-item {
+  border: 1px solid var(--linha);
+  border-radius: 12px;
+  background: var(--card);
+  overflow: hidden;
+}
+
+.trilho-cabeca {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  background: var(--card-2);
+  border-bottom: 1px solid var(--linha);
+  flex-wrap: wrap;
+}
+
+.trilho-fase {
+  font-size: 0.68rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  font-weight: 800;
+  padding: 3px 9px;
+  border-radius: 5px;
+  border: 1px solid;
+}
+
+.fase-f0 { color: #9aa3b2; border-color: #9aa3b255; }
+.fase-f1 { color: var(--ok); border-color: #57b85a55; }
+.fase-f2 { color: var(--ouro); border-color: #c8a24a55; }
+.fase-f3 { color: #d98ae0; border-color: #d98ae055; }
+
+.trilho-cabeca h3 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.trilho-cabeca .quando {
+  margin-left: auto;
+  font-size: 0.72rem;
+  color: var(--suave);
+  opacity: 0.8;
+}
+
+.trilho ul {
+  margin: 0;
+  padding: 14px 16px 16px 32px;
+  display: grid;
+  gap: 7px;
+  font-size: 0.88rem;
+  color: var(--suave);
+}
+
+.trilho li::marker {
+  color: var(--ouro);
+}
+
+/* --- FAQ ------------------------------------------------------------- */
+
+.faq {
+  margin: 20px 0;
+  border: 1px solid var(--linha);
+  border-radius: 10px;
+  overflow: hidden;
+}
+
+.faq details {
+  border-bottom: 1px solid var(--linha);
+}
+
+.faq details:last-child {
+  border-bottom: 0;
+}
+
+.faq summary {
+  padding: 13px 16px;
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 0.92rem;
+  background: var(--card);
+  list-style: none;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.faq summary::-webkit-details-marker {
+  display: none;
+}
+
+.faq summary::before {
+  content: '+';
+  color: var(--ouro);
+  font-weight: 800;
+  width: 14px;
+}
+
+.faq details[open] summary::before {
+  content: '\2212';
+}
+
+.faq .corpo {
+  padding: 4px 16px 15px;
+  font-size: 0.89rem;
+  color: var(--suave);
+}
+
+/* --- rodapé ---------------------------------------------------------- */
+
+.doc-rodape {
+  padding: 32px 0 10px;
+  color: var(--suave);
+  font-size: 0.82rem;
+  border-top: 1px solid var(--linha);
+  margin-top: 20px;
+  display: flex;
+  gap: 14px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.doc-rodape a {
+  color: var(--ouro);
+}
+
+/* --- responsivo ------------------------------------------------------ */
+
+@media (max-width: 720px) {
+  .shot-lado {
+    grid-template-columns: 1fr;
+  }
+
+  .shot-lado .shot {
+    max-width: 180px;
+  }
+
+  .doc-hero {
+    padding: 40px 0 30px;
+  }
+}

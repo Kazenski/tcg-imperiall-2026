@@ -166,6 +166,12 @@ function hud(): HTMLElement {
 
   const acoes = document.createElement('div');
   acoes.className = 'acoes';
+  // Botão de ajuda: leva ao guia com as regras e o roadmap.
+  const botaoAjuda = document.createElement('a');
+  botaoAjuda.className = 'botao-ajuda';
+  botaoAjuda.href = './tutorial.html';
+  botaoAjuda.title = 'Como jogar — regras, pilhas, combate e roadmap';
+  botaoAjuda.textContent = '?';
   const botaoAdmin = document.createElement('button');
   botaoAdmin.className = 'botao-sec';
   botaoAdmin.textContent = 'Admin';
@@ -191,7 +197,7 @@ function hud(): HTMLElement {
     if (estado.vencedor !== null) return;
     avancarFase();
   });
-  acoes.append(botaoAdmin, botaoNovo, botaoFase);
+  acoes.append(botaoAjuda, botaoAdmin, botaoNovo, botaoFase);
 
   bar.append(turno, placar, acoes);
   if (estado.vencedor !== null) {

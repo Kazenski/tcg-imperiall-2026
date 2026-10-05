@@ -2,3 +2,7 @@ node_modules
 dist
 *.local
 .DS_Store
+
+# capturas de tela intermediárias: só servem de insumo para
+# scripts/recortar.mjs, que gera os pedaços em public/docs/.
+public/docs/_board-*.png

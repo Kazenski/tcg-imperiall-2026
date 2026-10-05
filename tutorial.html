@@ -1,0 +1,628 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="theme-color" content="#0f1116" />
+    <title>Como jogar — Imperiall TCG</title>
+    <meta
+      name="description"
+      content="Guia completo do Imperiall TCG: pilhas por nível, as 5 fases do turno, a matemática do combate, ataque direto, level e dano."
+    />
+    <link rel="stylesheet" href="/src/doc.css" />
+  </head>
+  <body class="doc">
+    <header class="doc-topo">
+      <div class="interno">
+        <a class="doc-logo" href="./">Imperiall TCG</a>
+        <nav>
+          <a href="#pilhas">Pilhas</a>
+          <a href="#fases">Fases</a>
+          <a href="#combate">Combate</a>
+          <a href="#level">Level</a>
+          <a href="#cartas">Cartas</a>
+          <a href="#roadmap">Roadmap</a>
+          <a href="./jogo.html">Jogar</a>
+        </nav>
+      </div>
+    </header>
+
+    <main class="doc-shell">
+      <!-- ============================ HERÓI ============================ -->
+      <section class="doc-hero">
+        <span class="selo">Guia completo</span>
+        <h1>Como jogar<br />Imperiall TCG</h1>
+        <p>
+          Duelo de cartas onde a força não vem de sorte: cada criatura sobe por uma
+          <strong>pilha</strong>, um nível por vez. Para ter o Imperador da Ruína em campo, você
+          precisa primeiro sustentar as oito cartas que estão embaixo dele.
+        </p>
+        <div class="doc-acoes">
+          <a class="btn btn-primario" href="./jogo.html">▶ Entrar no duelo</a>
+          <a class="btn" href="#pilhas">Ir para a regra das pilhas</a>
+        </div>
+      </section>
+
+      <!-- ============================ A TELA =========================== -->
+      <section class="doc-secao" id="tela">
+        <h2><span class="num">01</span> A tela do duelo</h2>
+        <p class="lead">
+          Tudo o que você precisa fica em uma tela só. Da esquerda para a direita: o placar, o log
+          com as regras sempre à mão, a mesa com os dois campos e, no fim, os detalhes da carta em
+          que você clicou.
+        </p>
+
+        <figure class="shot">
+          <img src="/docs/10-board-completo.png" alt="Visão completa da mesa do duelo" />
+          <figcaption>
+            A mesa completa: placar em cima, log à esquerda, campo inimigo, separador de fases,
+            seu campo, sua mão e os detalhes da carta selecionada.
+          </figcaption>
+        </figure>
+
+        <h3>Placar, turno e level</h3>
+        <div class="shot-lado">
+          <figure class="shot">
+            <img src="/docs/01-hud.png" alt="Placar com vida, level e dano acumulado" />
+            <figcaption>Vida (LP), level na partida e dano acumulado de cada lado.</figcaption>
+          </figure>
+          <ul class="legenda-flutuante">
+            <li><span class="pin">1</span><span><strong>LP (vida).</strong> Começa em 4000. Chega a zero, você perde.</span></li>
+            <li><span class="pin">2</span><span><strong>Lv (level na partida).</strong> É o que limita quais cartas você pode invocar. Só desce.</span></li>
+            <li><span class="pin">3</span><span><strong>Dano acumulado.</strong> A cada 100 de dano recebido, o level cai 1. É por isso que o level aqui está em 1.</span></li>
+            <li><span class="pin">4</span><span><strong>Turno e vez.</strong> Você é o Jogador 1; o oponente joga sozinho e passa as fases com tempo, para você acompanhar.</span></li>
+          </ul>
+        </div>
+
+        <h3>Log com as regras dentro</h3>
+        <div class="shot-lado">
+          <figure class="shot">
+            <img src="/docs/02-log-regras.png" alt="Log do duelo com o resumo das regras" />
+            <figcaption>As últimas jogadas e, abaixo, o resumo das regras sempre visível.</figcaption>
+          </figure>
+          <p>
+            Não precisa decorar nada: as regras de pilha e de combate estão escritas no painel de log,
+            logo abaixo das últimas jogadas. Se algum dia travar num "⚠", o motivo aparece ali e na
+            linha seguinte do log.
+          </p>
+        </div>
+
+        <h3>Os dois campos são espelhados</h3>
+        <figure class="shot">
+          <img src="/docs/04-campo-inimigo.png" alt="Deck do oponente à esquerda e pilhas do campo dele espelhadas" />
+          <figcaption>
+            O baralho do oponente fica à esquerda e as pilhas dele saem na ordem inversa (P5, P4, P3,
+            P2, P1). Do seu lado é o contrário: campo primeiro, baralho à direita. Os dois campos
+            ficam simétricos, como numa mesa.
+          </figcaption>
+        </figure>
+
+        <h3>O separador de fases</h3>
+        <div class="shot-lado">
+          <figure class="shot">
+            <img src="/docs/03-fases.png" alt="Separador de fases entre os dois campos" />
+            <figcaption>A fase ativa e o que dá para fazer nela.</figcaption>
+          </figure>
+          <p>
+            A faixa fica <strong>entre os dois campos</strong>, como um divisor de mesa. A fase atual
+            acende em dourado, e a linha de baixo diz exatamente a ação permitida naquele momento.
+          </p>
+        </div>
+      </section>
+
+      <!-- ============================ PILHAS =========================== -->
+      <section class="doc-secao" id="pilhas">
+        <h2><span class="num">02</span> Pilhas: a regra central</h2>
+        <p class="lead">
+          Cada uma das 5 zonas do campo é uma <strong>pilha</strong> de cartas empilhadas de baixo
+          para cima. Só a carta de cima conta — as de baixo ficam guardadas, mas não respondem a nada.
+        </p>
+
+        <div class="shot-lado">
+          <figure class="shot">
+            <img src="/docs/05-pilha-cheia.png" alt="Pilha completa do nível 0 ao nível 8" />
+            <figcaption>
+              Uma pilha cheia: do nível 0 no fundo até o nível 8 no topo. Só o topo está ativo.
+            </figcaption>
+          </figure>
+          <div>
+            <h3>Subir de 1 em 1</h3>
+            <p>
+              Uma pilha vazia só aceita uma carta de <strong>nível 0</strong>. Depois disso, cada nova
+              carta precisa ser <strong>exatamente um nível acima</strong> do topo.
+            </p>
+            <ul>
+              <li>Pilha vazia → só nível 0</li>
+              <li>Topo em nível 0 → só nível 1</li>
+              <li>Topo em nível 2 → só nível 3</li>
+            </ul>
+            <div class="aviso">
+              <p>
+                <strong>Para ter o nível 8 ativo, você precisa ter de 0 a 7 embaixo.</strong> São
+                nove cartas, uma por turno (só se invoca 1 monstro por turno).
+              </p>
+            </div>
+            <h3>Só o topo interage</h3>
+            <p>
+              A carta de cima é a <strong>ativa</strong>: só ela ataca, só ela pode ser atacada e só
+              ela alterna entre ataque e defesa. As de baixo estão guardadas — você pode clicar para
+              ler os detalhes, mas elas não respondem a nada.
+            </p>
+            <p>
+              Quando a de cima é destruída, a de baixo vira a ativa automaticamente.
+            </p>
+          </div>
+        </div>
+
+        <h3>Cada pilha conta seus próprios níveis</h3>
+        <div class="shot-lado">
+          <figure class="shot">
+            <img src="/docs/06-pilha-3.png" alt="Pilha com três cartas" />
+            <figcaption>Pilha 2 com três cartas: níveis 0, 1 e 2.</figcaption>
+          </figure>
+          <p>
+            As 5 pilhas são independentes. A pilha 1 pode estar no nível 8 enquanto a pilha 2 está
+            vazia esperando um nível 0. Você escolhe onde empilhar: se o nível da carta couber em
+            várias pilhas, o jogo destaca as que aceitam e você clica na que quiser. Se couber em
+            uma só, ele empilha sozinho.
+          </p>
+        </div>
+
+        <div class="aviso perigo">
+          <p>
+            <strong>A pilha de base é frágil.</strong> Se o inimigo destruir a carta do fundo, a
+            pilha inteira desaba e você recomeça do nível 0. Isso é de propósito: obriga a
+            defender a base e cria peso para cada invocação.
+          </p>
+        </div>
+
+        <h3>Como invocar, na prática</h3>
+        <ol class="passos">
+          <li>
+            <div>
+              <b>Compre</b>
+              Na fase <strong>Compra</strong>, clique no seu deck (o baralho virado, à direita).
+            </div>
+          </li>
+          <li>
+            <div>
+              <b>Avance para a fase Principal</b>
+              Clique em <em>Próxima fase</em> (ou em <em>Passar turno</em> quando chegar em Fim).
+            </div>
+          </li>
+          <li>
+            <div>
+              <b>Clique na carta da mão</b>
+              Você também vê a carta ampliada na lateral direita. Se o seu level alcançar o nível
+              dela e alguma pilha aceitar, as pilhas possíveis acendem em dourado.
+            </div>
+          </li>
+          <li>
+            <div>
+              <b>Clique na pilha que vai receber</b>
+              A carta entra por cima e vira a ativa. Se só uma pilha serve, ela empilha sozinha.
+            </div>
+          </li>
+          <li>
+            <div>
+              <b>Ajuste o modo (opcional)</b>
+              Na fase Principal, clique no selo ⚔/🛡 no canto da carta ativa para alternar entre
+              ataque e defesa.
+            </div>
+          </li>
+        </ol>
+      </section>
+
+      <!-- ============================ FASES ============================ -->
+      <section class="doc-secao" id="fases">
+        <h2><span class="num">03</span> As 5 fases do turno</h2>
+        <p class="lead">O turno segue a ordem clássica de Yu-Gi-Oh, com uma fase a mais no fim.</p>
+        <div class="tabela-envolve">
+          <table>
+            <thead>
+              <tr><th>Fase</th><th>O que acontece</th><th>O que você pode fazer</th></tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><strong>Compra</strong></td>
+                <td>Compra 1 carta do deck e o turno passa para Principal.</td>
+                <td>Clicar no deck para comprar. É a única ação.</td>
+              </tr>
+              <tr>
+                <td><strong>Principal</strong></td>
+                <td>É a fase das invocações.</td>
+                <td>Empilhar 1 carta (só 1 monstro por turno) e alternar o modo da carta ativa.</td>
+              </tr>
+              <tr>
+                <td><strong>Combate</strong></td>
+                <td>Resolução das batalhas.</td>
+                <td>Cada carta ativa ataca uma vez. Escolher alvo carta ou vida.</td>
+              </tr>
+              <tr>
+                <td><strong>Finalização</strong></td>
+                <td>Encerramento das ações.</td>
+                <td>Nada. Só avançar.</td>
+              </tr>
+              <tr>
+                <td><strong>Fim</strong></td>
+                <td>Última olhada antes de passar.</td>
+                <td>Nada. O botão vira <em>Passar turno</em>.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p>
+          Quando a vez passa para o oponente, a IA joga o turno inteiro sozinha e
+          <strong>pausa entre cada jogada</strong> — você vê ela comprar, invocar e atacar em
+          sequência, com o log registrando tudo.
+        </p>
+      </section>
+
+      <!-- =========================== COMBATE =========================== -->
+      <section class="doc-secao" id="combate">
+        <h2><span class="num">04</span> Combate: a matemática</h2>
+        <p class="lead">
+          São quatro casos, e só o <strong>modo do alvo</strong> muda o resultado. Toda diferença de
+          poder vai para a vida de quem <em>perdeu a carta</em>.
+        </p>
+
+        <h3>Contra um alvo em modo ATAQUE</h3>
+        <div class="tabela-envolve">
+          <table>
+            <thead>
+              <tr><th>Situação</th><th>O que acontece</th><th>Vida</th></tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>Seu <span class="atk">ATK</span> é <strong>maior</strong> que a <span class="def">DEF</span> do alvo</td>
+                <td>Alvo destruído</td>
+                <td class="resultado">inimigo leva ATK − DEF</td>
+              </tr>
+              <tr>
+                <td>Seu <span class="atk">ATK</span> é <strong>menor</strong> que a <span class="def">DEF</span> do alvo</td>
+                <td>Você é destruído</td>
+                <td class="resultado">você leva DEF − ATK</td>
+              </tr>
+              <tr>
+                <td>São iguais</td>
+                <td>As duas se destroem</td>
+                <td class="resultado">ninguém leva dano</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h3>Contra um alvo em modo DEFESA</h3>
+        <p>A defesa absorve tudo: ela nunca causa dano na vida do jogador.</p>
+        <div class="tabela-envolve">
+          <table>
+            <thead>
+              <tr><th>Situação</th><th>O que acontece</th><th>Vida</th></tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>Seu <span class="atk">ATK</span> é <strong>maior</strong> que a <span class="def">DEF</span> do alvo</td>
+                <td>Alvo destruído</td>
+                <td class="resultado">ninguém leva dano</td>
+              </tr>
+              <tr>
+                <td>Seu <span class="atk">ATK</span> é <strong>menor</strong> que a <span class="def">DEF</span> do alvo</td>
+                <td>Alvo sobrevive, você rebate</td>
+                <td class="resultado">você leva DEF − ATK</td>
+              </tr>
+              <tr>
+                <td>São iguais</td>
+                <td>Nada acontece</td>
+                <td class="resultado">ninguém leva dano</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h3>Atacando a vida</h3>
+        <div class="aviso perigo">
+          <p>
+            <strong>Só se ataca a vida com o campo inimigo completamente vazio.</strong> Havendo
+            qualquer criatura em qualquer pilha, o ataque direto é proibido e você é obrigado a
+            atacar uma carta. Vale igual para os dois lados.
+          </p>
+          <p>
+            Se passar, o dano é sempre o ATK inteiro — não há defense nem redução.
+          </p>
+        </div>
+        <p>
+          Quando o direto é legal, a vida do oponente fica com a borda <strong>pulsando em
+          vermelho</strong> e aparece uma <strong>seta</strong> da sua carta até ela. Havendo
+          criaturas em campo, a borda fica cinza e diz <em>"Campo inimigo tem criaturas"</em>.
+        </p>
+        <figure class="shot">
+          <img src="/docs/09-seta-ataque.png" alt="Seta de ataque ligando a carta ativa à vida do oponente" />
+          <figcaption>
+            A seta mostra a origem e o destino do ataque — aqui, da carta ativa da pilha 1 até a
+            vida do oponente.
+          </figcaption>
+        </figure>
+        <p>
+          <strong>Dica:</strong> colocar a base em modo defesa não impede que ela seja destruída por
+          um ATK maior, mas evita que o dano bata na sua vida. É a melhor forma de sobreviver um
+          turno para conseguir empilhar a carta de cima.
+        </p>
+      </section>
+
+      <!-- ============================ LEVEL ============================ -->
+      <section class="doc-secao" id="level">
+        <h2><span class="num">05</span> Level, dano e o que você pode invocar</h2>
+        <p class="lead">
+          O level é o seu teto de invocação. Ele nunca sobe durante o duelo — só desce, conforme você
+          apanha.
+        </p>
+        <ul class="passos">
+          <li><div><b>Todo duelo começa no nível 10.</b></div></li>
+          <li>
+            <div>
+              <b>A cada 100 de dano acumulado, o level cai 1.</b>
+              Sofreu 950? Caiu 9 pontos e está no nível 1.
+            </div>
+          </li>
+          <li>
+            <div>
+              <b>Nível mínimo é 0.</b> Cartas de nível 0 existem justamente para você ainda poder
+              jogar quando chega lá embaixo.
+            </div>
+          </li>
+        </ul>
+        <p>
+          Convém notar que a regra da pilha já implica o level: para empilhar uma carta de nível
+          <em>N</em> você precisa ter as de 0 a <em>N−1</em> embaixo. As duas regras se reforçam —
+          o level é o teto, a pilha é o caminho.
+        </p>
+      </section>
+
+      <!-- ============================ CARTAS =========================== -->
+      <section class="doc-secao" id="cartas">
+        <h2><span class="num">06</span> Lendo as cartas</h2>
+
+        <div class="shot-lado">
+          <figure class="shot">
+            <img src="/docs/08-detalhes.png" alt="Painel de detalhes com a carta ampliada" />
+            <figcaption>
+              Clique em qualquer carta e ela aparece ampliada aqui, com todos os atributos.
+            </figcaption>
+          </figure>
+          <div>
+            <p>
+              <strong>Clique em qualquer carta</strong> — da mão, do topo de uma pilha, ou de uma
+              carta enterrada — e ela abre na lateral direita. É o lugar para conferir raridade,
+              números e o efeito antes de decidir.
+            </p>
+            <p>
+              O campo <strong>SITUAÇÃO</strong> diz exatamente onde a carta está: na mão, no seu
+              cemitério, ou na pilha 2 como ativa (topo) ou enterrada na posição 3.
+            </p>
+          </div>
+        </div>
+
+        <div class="shot-lado">
+          <figure class="shot">
+            <img src="/docs/07-mao.png" alt="Sua mão com as cartas disponíveis" />
+            <figcaption>Sua mão, em ordem da esquerda para a direita.</figcaption>
+          </figure>
+          <div>
+            <h3>Os números de uma carta</h3>
+            <dl class="termos" style="grid-template-columns: 1fr">
+              <div class="termo">
+                <dt>⚔ ATK</dt>
+                <dd>Dano que a carta causa ao atacar. Contra um alvo em defesa, não causa dano nenhum.</dd>
+              </div>
+              <div class="termo">
+                <dt>🛡 DEF</dt>
+                <dd>Resistência. Absorve o golpe em batalha e rebate a diferença no atacante.</dd>
+              </div>
+              <div class="termo">
+                <dt>💨 EVA</dt>
+                <dd>Reservada para cartas de efeito (mágicas e armadilhas). Hoje não afeta o combate.</dd>
+              </div>
+              <div class="termo">
+                <dt>Nível</dt>
+                <dd>O level da partida exigido para invocá-la. Determina a ordem da pilha.</dd>
+              </div>
+            </dl>
+            <p>
+              A raridade aparece como um <strong>brilho colorido</strong> em volta da carta: cinza
+              (comum), azul (incomum), roxo (raro), laranja (épico) e dourado (lendário).
+            </p>
+          </div>
+        </div>
+
+        <h3>Modo ataque ou defesa</h3>
+        <p>
+          O selo no canto da carta ativa alterna entre <strong>⚔ ataque</strong> e <strong>🛡
+          defesa</strong>. Só muda na fase Principal. Enquanto estiver em defesa, a carta não ataca.
+        </p>
+
+        <h3>Seus decks</h3>
+        <p>
+          Cada lado começa com 30 cartas. O baralho do oponente fica à esquerda e o seu à direita —
+          espelhados. Na fase de compra, clique no seu para comprar.
+        </p>
+
+        <h3>Cadastrar cartas próprias (Admin)</h3>
+        <p>
+          O botão <strong>Admin</strong> abre o painel onde você cria cartas novas (nome, descrição,
+          raridade, nível, ATK, DEF e EVA). As cartas cadastradas entram no seu deck no próximo
+          duelo. Dá para <strong>exportar</strong> o JSON e <strong>importar</strong> de volta —
+          é assim que uma coleção nova chega para todo mundo.
+        </p>
+      </section>
+
+      <!-- =========================== ROADMAP =========================== -->
+      <section class="doc-secao" id="roadmap">
+        <h2><span class="num">07</span> O que vem pela frente</h2>
+        <p class="lead">
+          Onde o jogo está agora e o que está planejado, do mais próximo para o mais distante.
+        </p>
+
+        <div class="trilho">
+          <div class="trilho-item">
+            <div class="trilho-cabeca">
+              <span class="trilho-fase fase-f0">Feito</span>
+              <h3>Fundação do duelo</h3>
+              <span class="quando">v1</span>
+            </div>
+            <ul>
+              <li>5 fases de turno, compra, invocação e combate</li>
+              <li>Level que desce 1 a cada 100 de dano cumulativo</li>
+              <li>Modos ataque e defesa com os 4 casos de batalha</li>
+              <li>Pilha por nível: só o topo interage, ordem obrigatória de 1 em 1</li>
+              <li>Ataque direto bloqueado enquanto houver criaturas em campo</li>
+              <li>Oponente com IA que joga em passos, com pausas visíveis</li>
+              <li>Moldura e verso do baralho, painel de detalhes e log com as regras</li>
+              <li>Admin de cartas com exportar/importar JSON</li>
+            </ul>
+          </div>
+
+          <div class="trilho-item">
+            <div class="trilho-cabeca">
+              <span class="trilho-fase fase-f1">Próximo</span>
+              <h3>Mágicas, armadilhas e efeitos de pilha</h3>
+              <span class="quando">v1.1</span>
+            </div>
+            <ul>
+              <li><strong>Cartas de efeito usando a EVA</strong> que já está reservada nas criaturas</li>
+              <li>Zonas de magia e armadilha, com alvo de invocação ou carta</li>
+              <li>Efeitos que mexem na pilha: revelar uma carta de baixo, trocar, remover</li>
+              <li>Conjuração por nível, seguindo a mesma ordem das pilhas</li>
+              <li>Cemitério com recuperação: resgatar uma carta enterrada e voltar para a mão</li>
+            </ul>
+          </div>
+
+          <div class="trilho-item">
+            <div class="trilho-cabeca">
+              <span class="trilho-fase fase-f1">Próximo</span>
+              <h3>Deck builder</h3>
+              <span class="quando">v1.1</span>
+            </div>
+            <ul>
+              <li>Montar um deck de 30 cartas puxando da coleção, em vez de usar o padrão</li>
+              <li>Salvar vários decks e trocar entre eles</li>
+              <li>Contagem de cartas por nível e aviso quando a curva não fecha</li>
+              <li>Exportar/importar o deck em JSON</li>
+            </ul>
+          </div>
+
+          <div class="trilho-item">
+            <div class="trilho-cabeca">
+              <span class="trilho-fase fase-f2">Depois</span>
+              <h3>IA mais forte</h3>
+              <span class="quando">v1.2</span>
+            </div>
+            <ul>
+              <li>Planejar a pilha: escolher quando subir um nível e quando fundar outra pilha</li>
+              <li>Ponderar o risco de expor a base em vez de atacar direto</li>
+              <li>Reagir ao level do jogador: deixar de empilhar cartas que ele já não consegue invocar</li>
+              <li>Dificuldade ajustável</li>
+            </ul>
+          </div>
+
+          <div class="trilho-item">
+            <div class="trilho-cabeca">
+              <span class="trilho-fase fase-f2">Depois</span>
+              <h3>Progressão e coleção</h3>
+              <span class="quando">v1.2</span>
+            </div>
+            <ul>
+              <li>Level de dono entre duelos, o que amarra a ligação com o jogo idle</li>
+              <li>Cartas novas desbloqueadas pelo progresso</li>
+              <li>Nova raridade acima de lendário</li>
+              <li>Perfil com estatísticas: duelos, vitórias, maior pilha construída</li>
+            </ul>
+          </div>
+
+          <div class="trilho-item">
+            <div class="trilho-cabeca">
+              <span class="trilho-fase fase-f2">Depois</span>
+              <h3>Arte e som</h3>
+              <span class="quando">v1.3</span>
+            </div>
+            <ul>
+              <li>Imagem própria para cada carta, no lugar do espaço reservado na arte</li>
+              <li>Animações de invocação, de carta subindo na pilha e de destruição</li>
+              <li>Efeitos sonoros no golpe, na destruição e na subida de level</li>
+            </ul>
+          </div>
+
+          <div class="trilho-item">
+            <div class="trilho-cabeca">
+              <span class="trilho-fase fase-f3">Sonhando</span>
+              <h3>Jogo mais longo</h3>
+              <span class="quando">v2</span>
+            </div>
+            <ul>
+              <li>Dois jogadores no mesmo teclado (hotseat)</li>
+              <li>Salvamento do duelo em andamento e replay de turnos</li>
+              <li>Modo ranqueado com pontuação</li>
+              <li>Campanha com baralhos pré-montados</li>
+            </ul>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============================= FAQ ============================= -->
+      <section class="doc-secao" id="faq">
+        <h2><span class="num">08</span> Perguntas frequentes</h2>
+        <div class="faq">
+          <details>
+            <summary>Por que não consigo invocar minha carta de nível 3?</summary>
+            <div class="corpo">
+              Porque alguma pilha precisa estar no nível 2. Se nenhuma estiver, o jogo avisa exatamente
+              o que falta. Se o seu level na partida estiver abaixo de 3, o problema é outro: o level
+              desceu com o dano.
+            </div>
+          </details>
+          <details>
+            <summary>Posso colocar uma carta de nível 0 em cima de uma de nível 2?</summary>
+            <div class="corpo">
+              Não. Cada pilha só aceita exatamente um nível acima do topo. Uma carta de nível 0 em
+              pilha não cheia tem que ir para outra pilha — o jogo destaca as que estão livres.
+            </div>
+          </details>
+          <details>
+            <summary>Por que não consigo atacar a vida do oponente?</summary>
+            <div class="corpo">
+              Porque ele tem alguma criatura em alguma pilha. A regra proíbe o ataque direto com o
+              campo inimigo ocupado. Destrua as criaturas primeiro.
+            </div>
+          </details>
+          <details>
+            <summary>As cartas de baixo do meu opponent estão mortas?</summary>
+            <div class="corpo">
+              Não, elas continuam lá — só não fazem nada. Quando a carta de cima cai, a de baixo volta
+              a ser a ativa. Aproveite para revidar.
+            </div>
+          </details>
+          <details>
+            <summary>Como funciona o level exatamente?</summary>
+            <div class="corpo">
+              Ele começa em 10 e desce 1 a cada 100 de dano acumulado que você recebeu, nunca
+              chegando abaixo de 0. Ele não volta a subir dentro do duelo.
+            </div>
+          </details>
+          <details>
+            <summary>Consso jogar as minhas próprias cartas?</summary>
+            <div class="corpo">
+              Sim. O botão Admin cria cartas com nome, descrição, raridade, nível, ATK, DEF e EVA. Elas
+              entram no seu deck no duelo seguinte. O botão Exportar JSON gera o arquivo para
+              commit no repositório, que é como a coleção chega para os outros.
+            </div>
+          </details>
+        </div>
+      </section>
+
+      <footer class="doc-rodape">
+        <span>Imperiall TCG — um duelo de cartas sobre ruínas.</span>
+        <a href="./jogo.html">Entrar no duelo →</a>
+        <a href="./">Voltar ao início</a>
+      </footer>
+    </main>
+  </body>
+</html>
