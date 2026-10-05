@@ -1,13 +1,13 @@
 /**
  * Regras do duelo — lógica pura, sem DOM, testável em Node.
  *
- * Fluxo de um turno:
- *   1. draw: o jogador da vez compra 1 carta (a partir do turno 2).
- *   2. main: invocar criaturas da mão. NÃO HÁ GASTO: basta
- *      ter `levelPartida >= nivel` da carta e uma zona livre.
- *   3. batalha: cada criatura ataca no máximo 1 vez — contra
- *      uma criatura inimiga ou contra o jogador.
- *   4. end: passa a vez e compra 1.
+ * Fluxo do turno (fases estilo Yu-Gi-Oh, adaptado):
+ *   1. compra      → o jogador clica no deck para comprar 1 carta
+ *   2. principal   → invocar (máx 1 monstro/turno), mudar modo,
+ *                    usar magias da mão
+ *   3. combate     → selecionar atacante e dar alvo
+ *   4. finalizacao → pular para a próxima fase (sem ações)
+ *   5. fim         → última olhada (sem poder mexer no campo)
  *
  * Level na partida:
  *   Começa em LEVEL_INICIAL e SÓ DESCE: a cada 100 de dano
@@ -39,6 +39,7 @@ import {
   DECK_MAXIMO,
   DECK_MINIMO,
   DANO_POR_LEVEL,
+  FASES_ORDEM,
   LEVEL_INICIAL,
   MAO_INICIAL,
   ZONAS,
@@ -48,7 +49,6 @@ import {
   type EventoDuelo,
   type Instancia,
   type Jogador,
-  type Modo,
   type Par,
 } from './types.ts';
 
@@ -112,6 +112,7 @@ export function dueloNovo(opcao: OpcaoDuelo): EstadoDuelo {
   const estado: EstadoDuelo = {
     vez: 0,
     turno: 1,
+    fase: 'compra',
     levelPartida: [...nivelInicial] as Par<number>,
     levelInicial: [...nivelInicial] as Par<number>,
     danoRecebido: [0, 0],
@@ -126,6 +127,7 @@ export function dueloNovo(opcao: OpcaoDuelo): EstadoDuelo {
     rngState: seed,
     log: [],
     vencedor: null,
+    invocouMonstro: [false, false],
   };
 
   // Mão inicial: 5 para cada. Silencioso — não entra no log.
@@ -133,7 +135,6 @@ export function dueloNovo(opcao: OpcaoDuelo): EstadoDuelo {
     for (let i = 0; i < MAO_INICIAL; i++) comprar(estado, lado, true);
   }
 
-  iniciarTurno(estado, false);
   return estado;
 }
 
@@ -156,13 +157,67 @@ function comprar(estado: EstadoDuelo, jogador: Jogador, silencioso = false): voi
   }
 }
 
-/** Prepara o turno do jogador da vez (draw a partir do turno 2). */
-function iniciarTurno(estado: EstadoDuelo, draw: boolean): void {
+/**
+ * Fase de compra: o jogador clica no deck para comprar 1 carta.
+ * Avança automaticamente para a fase principal.
+ */
+export function comprarCarta(
+  estado: EstadoDuelo,
+  jogador: Jogador,
+): { estado: EstadoDuelo; evento: EventoDuelo } {
+  const s = novo(estado);
+  if (s.vencedor !== null) throw new Error('o duelo já acabou');
+  if (s.vez !== jogador) throw new Error('não é a sua vez');
+  if (s.fase !== 'compra') throw new Error('não é a fase de compra');
+
+  comprar(s, jogador);
+  if (s.vencedor !== null) {
+    return {
+      estado: s,
+      evento: registrar(s, { tipo: 'draw', mensagem: 'Deck vazio — fim de duelo.' }),
+    };
+  }
+  s.fase = 'principal';
+  return {
+    estado: s,
+    evento: registrar(s, {
+      tipo: 'fase',
+      mensagem: `Jogador ${jogador + 1} comprou. Fase principal.`,
+    }),
+  };
+}
+
+/** Avança para a próxima fase (ou termina o turno na fase 'fim'). */
+export function proximaFase(
+  estado: EstadoDuelo,
+): { estado: EstadoDuelo; evento: EventoDuelo } {
+  const s = novo(estado);
+  if (s.vencedor !== null) throw new Error('o duelo já acabou');
+
+  const indice = FASES_ORDEM.indexOf(s.fase);
+  if (indice === -1 || indice === FASES_ORDEM.length - 1) {
+    // Fase 'fim' (ou inválida): termina o turno.
+    return terminarTurno(s);
+  }
+
+  s.fase = FASES_ORDEM[indice + 1]!;
+  return {
+    estado: s,
+    evento: registrar(s, {
+      tipo: 'fase',
+      mensagem: `Fase de ${s.fase}.`,
+    }),
+  };
+}
+
+/** Prepara o turno do jogador da vez (fase de compra). */
+function iniciarTurno(estado: EstadoDuelo): void {
   const vez = estado.vez;
+  estado.fase = 'compra';
+  estado.invocouMonstro[vez] = false;
   for (const zona of estado.campo[vez]!) {
     if (zona) zona.atacou = false;
   }
-  if (draw) comprar(estado, vez);
 }
 
 /**
@@ -194,6 +249,8 @@ export function motivoNaoPodeInvocar(
 ): string | null {
   if (estado.vencedor !== null) return 'o duelo já acabou';
   if (estado.vez !== jogador) return 'não é a sua vez';
+  if (estado.fase !== 'principal') return 'só se invoca na fase principal';
+  if (estado.invocouMonstro[jogador]!) return 'só se invoca 1 monstro por turno';
   if (!estado.mao[jogador]!.includes(uid)) return 'essa carta não está na sua mão';
   const carta = CARTAS_POR_ID[cartaIdDe(uid)];
   if (!carta) return 'carta desconhecida';
@@ -216,6 +273,7 @@ export function invocar(
   const cartaId = cartaIdDe(uid);
   const carta = CARTAS_POR_ID[cartaId]!;
   s.mao[jogador] = s.mao[jogador]!.filter((u) => u !== uid);
+  s.invocouMonstro[jogador] = true;
   const zona = s.campo[jogador]!.findIndex((z) => z === null);
   s.campo[jogador]![zona] = { uid, cartaId, atacou: false, modo: 'ataque' };
 
@@ -228,7 +286,7 @@ export function invocar(
   };
 }
 
-/** Troca uma criatura entre modo ataque e defesa. */
+/** Troca uma criatura entre modo ataque e defesa (fase principal). */
 export function alternarModo(
   estado: EstadoDuelo,
   jogador: Jogador,
@@ -237,13 +295,14 @@ export function alternarModo(
   const s = novo(estado);
   if (s.vencedor !== null) throw new Error('o duelo já acabou');
   if (s.vez !== jogador) throw new Error('não é a sua vez');
+  if (s.fase !== 'principal') throw new Error('só se muda de modo na fase principal');
   const achado = instanciaNoCampo(s, jogador, uid);
   if (!achado) throw new Error('essa criatura não está no seu campo');
   if (achado.instancia.atacou) {
     throw new Error('criatura que já atacou não troca de modo neste turno');
   }
   const carta = CARTAS_POR_ID[achado.instancia.cartaId]!;
-  const proximo: Modo = achado.instancia.modo === 'ataque' ? 'defesa' : 'ataque';
+  const proximo = achado.instancia.modo === 'ataque' ? 'defesa' : 'ataque';
   achado.instancia.modo = proximo;
   return {
     estado: s,
@@ -276,6 +335,7 @@ export function motivoNaoPodeAtacar(
 ): string | null {
   if (estado.vencedor !== null) return 'o duelo já acabou';
   if (estado.vez !== jogador) return 'não é a sua vez';
+  if (estado.fase !== 'combate') return 'só se ataca na fase de combate';
   const atacante = instanciaNoCampo(estado, jogador, uidAtacante);
   if (!atacante) return 'essa criatura não está no seu campo';
   if (atacante.instancia.atacou) return 'essa criatura já atacou neste turno';
@@ -408,18 +468,18 @@ function checarFim(s: EstadoDuelo): void {
   }
 }
 
-/** Passa a vez: limpa flags de ataque e compra 1. */
+/** Passa a vez: limpa flags e volta para a fase de compra. */
 export function terminarTurno(estado: EstadoDuelo): { estado: EstadoDuelo; evento: EventoDuelo } {
   const s = novo(estado);
   if (s.vencedor !== null) throw new Error('o duelo já acabou');
   s.turno += 1;
   s.vez = adversario(s.vez);
-  iniciarTurno(s, true);
+  iniciarTurno(s);
   return {
     estado: s,
     evento: registrar(s, {
       tipo: 'turno',
-      mensagem: `— Turno ${s.turno}: vez do Jogador ${s.vez + 1}.`,
+      mensagem: `— Turno ${s.turno}: vez do Jogador ${s.vez + 1} (fase de compra).`,
     }),
   };
 }

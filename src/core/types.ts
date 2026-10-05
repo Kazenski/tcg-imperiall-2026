@@ -47,10 +47,23 @@ export type Jogador = 0 | 1;
 /** Par ordenado por jogador: [jogador0, jogador1]. */
 export type Par<T> = [T, T];
 
+/**
+ * Fases do turno (estilo Yu-Gi-Oh, adaptado):
+ *   compra      → o jogador clica no deck para comprar 1 carta
+ *   principal   → invocar (máx 1 monstro/turno), mudar modo, usar magias
+ *   combate     → selecionar atacante e dar alvo
+ *   finalizacao → pular para a próxima fase (sem ações)
+ *   fim         → última olhada (sem poder mexer no campo)
+ */
+export type Fase = 'compra' | 'principal' | 'combate' | 'finalizacao' | 'fim';
+
+export const FASES_ORDEM: Fase[] = ['compra', 'principal', 'combate', 'finalizacao', 'fim'];
+
 export interface EstadoDuelo {
   /** 0 = você, 1 = oponente. */
   vez: Jogador;
   turno: number;
+  fase: Fase;
   /**
    * Level do jogador NESTA partida. Só desce: -1 a cada
    * 100 de dano recebido cumulativo, até 0.
@@ -73,6 +86,8 @@ export interface EstadoDuelo {
   rngState: number;
   log: string[];
   vencedor: Jogador | null;
+  /** Invocou monstro neste turno? (máx 1 por turno). */
+  invocouMonstro: Par<boolean>;
 }
 
 /** Alvo de um ataque: uma carta inimiga ou o jogador direto. */
@@ -88,6 +103,7 @@ export interface EventoDuelo {
     | 'dano'
     | 'turno'
     | 'draw'
+    | 'fase'
     | 'fim';
   mensagem: string;
 }

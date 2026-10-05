@@ -1,4 +1,4 @@
-/* Imperiall TCG — dark fantasy, mesma paleta do idle RPG. */
+/* Imperiall TCG — dark fantasy, visual estilo Yu-Gi-Oh. */
 
 :root {
   --bg: #0f1116;
@@ -9,6 +9,7 @@
   --atk: #e0533d;
   --def: #4a9de0;
   --eva: #7dd87d;
+  --fase-ativa: #c8a24a;
 }
 
 * {
@@ -28,7 +29,7 @@ body {
   padding: 12px;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 10px;
 }
 
 /* --- HUD ---------------------------------------------------- */
@@ -88,9 +89,20 @@ body {
   color: var(--ouro);
 }
 
-.lp .pontos {
-  font-size: 0.75rem;
-  color: var(--eva);
+.lp .level {
+  font-size: 0.8rem;
+  color: var(--ouro);
+  font-weight: 700;
+}
+
+.lp .dano {
+  font-size: 0.7rem;
+  opacity: 0.6;
+}
+
+.acoes {
+  display: flex;
+  gap: 8px;
 }
 
 .botao-turno {
@@ -107,14 +119,110 @@ body {
   filter: brightness(1.1);
 }
 
-/* --- Campo ---------------------------------------------------- */
+.botao-sec {
+  background: transparent;
+  color: var(--texto);
+  border: 1px solid var(--borda);
+  border-radius: 8px;
+  padding: 10px 14px;
+  cursor: pointer;
+}
 
-.campo h2 {
+.botao-sec:hover {
+  border-color: var(--ouro);
+}
+
+/* --- Barra de fases ----------------------------------------- */
+
+.fases {
+  display: flex;
+  gap: 6px;
+  justify-content: center;
+  background: var(--painel);
+  border: 1px solid var(--borda);
+  border-radius: 10px;
+  padding: 8px;
+}
+
+.fase {
+  padding: 6px 14px;
+  border-radius: 6px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  opacity: 0.45;
+  border: 1px solid transparent;
+}
+
+.fase.ativa {
+  opacity: 1;
+  background: #10131a;
+  border-color: var(--fase-ativa);
+  color: var(--fase-ativa);
+}
+
+/* --- Deck ---------------------------------------------------- */
+
+.deck h2,
+.campo h2,
+.mao h2 {
   margin: 0 0 6px;
   font-size: 0.9rem;
   opacity: 0.75;
   text-transform: uppercase;
   letter-spacing: 0.08em;
+}
+
+.deck-pilha {
+  display: flex;
+  justify-content: center;
+  padding: 8px;
+}
+
+.deck-carta {
+  width: 110px;
+  height: 154px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  background: linear-gradient(135deg, #1a1d28, #12151c);
+  border: 2px solid var(--borda);
+  border-radius: 8px;
+}
+
+.deck-carta.clicavel {
+  cursor: pointer;
+  border-color: var(--ouro);
+  animation: pulsar 1.5s ease-in-out infinite;
+}
+
+.deck-carta.clicavel:hover {
+  transform: translateY(-4px);
+}
+
+.deck-verso {
+  font-size: 3rem;
+  opacity: 0.6;
+}
+
+.deck-texto {
+  font-size: 0.75rem;
+  opacity: 0.7;
+}
+
+@keyframes pulsar {
+  0%, 100% { box-shadow: 0 0 0 0 #c8a24a00; }
+  50% { box-shadow: 0 0 16px 2px #c8a24a66; }
+}
+
+/* --- Campo ---------------------------------------------------- */
+
+.campo {
+  background: var(--painel);
+  border: 1px solid var(--borda);
+  border-radius: 10px;
+  padding: 10px;
 }
 
 .zonas {
@@ -124,7 +232,7 @@ body {
 }
 
 .zona {
-  min-height: 150px;
+  min-height: 154px;
   border: 1px dashed var(--borda);
   border-radius: 8px;
   background: #12151c;
@@ -135,14 +243,12 @@ body {
   width: 100%;
 }
 
-/* --- Cartas ---------------------------------------------------- */
+/* --- Cartas (visual YGO: verticais) ---------------------------- */
 
 .carta {
   position: relative;
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  padding: 8px;
   border-radius: 8px;
   background: var(--painel);
   border: 2px solid var(--borda);
@@ -150,70 +256,42 @@ body {
   user-select: none;
 }
 
-.carta.na-mao {
-  cursor: pointer;
-  min-width: 120px;
+.carta.vertical {
+  min-height: 154px;
+  padding: 6px;
 }
 
-.carta.na-mao:hover {
-  border-color: var(--ouro);
-  transform: translateY(-3px);
-}
-
-.carta.selecionada {
-  border-color: var(--ouro);
-  box-shadow: 0 0 0 2px var(--ouro);
-}
-
-.carta.atacou {
-  opacity: 0.55;
-}
-
-.campo.lado-1 .carta {
-  cursor: default;
-}
-
-.campo.lado-1.selecionado .carta {
-  cursor: crosshair;
-}
-
-.nivel {
-  position: absolute;
-  top: -9px;
-  left: -9px;
-  width: 26px;
-  height: 26px;
-  border-radius: 50%;
-  background: var(--ouro);
-  color: #14100a;
-  font-weight: 800;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 0.85rem;
-}
-
-.nome-carta {
+.carta-nome {
   font-weight: 700;
-  font-size: 0.85rem;
+  font-size: 0.78rem;
+  text-align: center;
+  padding: 2px 4px;
+  background: #10131a;
+  border-radius: 4px;
+  border: 1px solid var(--borda);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-.desc {
-  opacity: 0.7;
+.carta-nivel {
+  text-align: center;
   font-size: 0.72rem;
-  line-height: 1.25;
-  flex: 1;
+  color: var(--ouro);
+  font-weight: 700;
+  padding: 2px 0;
 }
 
-.stats {
+.carta-stats {
+  margin-top: auto;
   display: flex;
   justify-content: space-between;
   border-top: 1px solid var(--borda);
   padding-top: 4px;
 }
 
-.stats b {
-  font-size: 0.78rem;
+.carta-stats b {
+  font-size: 0.75rem;
 }
 
 .atk {
@@ -250,21 +328,81 @@ body {
   box-shadow: 0 0 12px #c8a24a55;
 }
 
-/* --- Mão ---------------------------------------------------- */
-
-.mao {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-top: 10px;
-  overflow-x: auto;
-  padding-bottom: 4px;
+/* estados */
+.carta.selecionada {
+  border-color: var(--ouro);
+  box-shadow: 0 0 0 2px var(--ouro);
 }
 
-.label-mao {
-  font-size: 0.8rem;
-  opacity: 0.7;
-  white-space: nowrap;
+.carta.atacou {
+  opacity: 0.55;
+}
+
+.carta.atingida {
+  animation: tremer 0.6s ease-in-out;
+}
+
+@keyframes tremer {
+  0%, 100% { transform: translateX(0); }
+  20% { transform: translateX(-6px); }
+  40% { transform: translateX(6px); }
+  60% { transform: translateX(-4px); }
+  80% { transform: translateX(4px); }
+}
+
+/* --- Badge de modo ---------------------------------------------- */
+
+.modo {
+  position: absolute;
+  top: -9px;
+  right: -9px;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.85rem;
+  cursor: pointer;
+  border: 2px solid var(--borda);
+  background: var(--painel);
+  z-index: 2;
+}
+
+.modo.ataque {
+  border-color: var(--atk);
+}
+
+.modo.defesa {
+  border-color: var(--def);
+}
+
+/* --- Mão (scroll horizontal) ------------------------------------- */
+
+.mao {
+  background: var(--painel);
+  border: 1px solid var(--borda);
+  border-radius: 10px;
+  padding: 10px;
+}
+
+.mao-lista {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding: 8px 4px;
+  min-height: 170px;
+}
+
+.mao-lista .carta {
+  min-width: 110px;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.mao-lista .carta:hover {
+  border-color: var(--ouro);
+  transform: translateY(-4px);
 }
 
 /* --- Log ---------------------------------------------------- */
@@ -297,76 +435,6 @@ body {
   margin: 8px 0 0;
   font-size: 0.72rem;
   opacity: 0.55;
-}
-
-@media (max-width: 720px) {
-  .zonas {
-    grid-template-columns: repeat(5, 84px);
-    overflow-x: auto;
-  }
-
-  .zona {
-    min-height: 130px;
-  }
-}
-
-/* --- Ações da HUD ----------------------------------------------- */
-
-.acoes {
-  display: flex;
-  gap: 8px;
-}
-
-.botao-sec {
-  background: transparent;
-  color: var(--texto);
-  border: 1px solid var(--borda);
-  border-radius: 8px;
-  padding: 10px 14px;
-  cursor: pointer;
-}
-
-.botao-sec:hover {
-  border-color: var(--ouro);
-}
-
-/* --- Level e dano no placar ------------------------------------- */
-
-.lp .level {
-  font-size: 0.8rem;
-  color: var(--ouro);
-  font-weight: 700;
-}
-
-.lp .dano {
-  font-size: 0.7rem;
-  opacity: 0.6;
-}
-
-/* --- Badge de modo ---------------------------------------------- */
-
-.modo {
-  position: absolute;
-  top: -9px;
-  right: -9px;
-  width: 26px;
-  height: 26px;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 0.85rem;
-  cursor: pointer;
-  border: 2px solid var(--borda);
-  background: var(--painel);
-}
-
-.modo.ataque {
-  border-color: var(--atk);
-}
-
-.modo.defesa {
-  border-color: var(--def);
 }
 
 /* --- Admin ------------------------------------------------------- */
@@ -472,12 +540,27 @@ body {
   font-size: 0.78rem;
 }
 
-/* --- Sincronização com o GitHub --------------------------------- */
-
 .admin-sync-info {
   font-size: 0.78rem;
   opacity: 0.7;
   line-height: 1.5;
   white-space: pre-line;
   margin: 0 0 8px;
+}
+
+/* --- Responsivo ---------------------------------------------------- */
+
+@media (max-width: 720px) {
+  .zonas {
+    grid-template-columns: repeat(5, 84px);
+    overflow-x: auto;
+  }
+
+  .zona {
+    min-height: 130px;
+  }
+
+  .carta.vertical {
+    min-height: 130px;
+  }
 }

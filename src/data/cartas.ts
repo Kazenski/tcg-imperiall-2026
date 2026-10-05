@@ -6,8 +6,8 @@
  * relíquias). Ids são ESTAVEIS: nunca mude um id já publicado.
  *
  * COMO PREENCHER (nada aqui é código, é só dado):
- *   nivel  1..8 — custo em pontos de level do turno E requisito do
- *                 level do dono (o nível do herói do idle RPG).
+ *   nivel  1..8 — level exigido NA PARTIDA para invocar (0-8).
+ *                 Não há gasto: só valida `levelPartida >= nivel`.
  *   atk    dano de batalha.
  *   def    absorve batalha; def alta vira escudo (rebate o excesso).
  *   eva    % de chance de esquivar um ataque (cap de 60%).
@@ -59,6 +59,46 @@ export const CARTAS: CartaTCG[] = [
     nivel: 0,
     atk: 200,
     def: 200,
+    eva: 0,
+  },
+  {
+    id: 'pescador',
+    nome: 'Pescador do Rio',
+    descricao: 'Conhece cada correnteza. E cada segredo que o rio guarda.',
+    raridade: 'comum',
+    nivel: 0,
+    atk: 280,
+    def: 220,
+    eva: 0,
+  },
+  {
+    id: 'menino-erro',
+    nome: 'Menino do Erro',
+    descricao: 'Dizem que ele nunca erra. Dizem.',
+    raridade: 'comum',
+    nivel: 0,
+    atk: 320,
+    def: 180,
+    eva: 0,
+  },
+  {
+    id: 'velha-moleque',
+    nome: 'Velha Moleque',
+    descricao: 'Rápida como um raio, teimosa como uma mula.',
+    raridade: 'comum',
+    nivel: 0,
+    atk: 260,
+    def: 240,
+    eva: 0,
+  },
+  {
+    id: 'cao-vadio',
+    nome: 'Cão Vadão',
+    descricao: 'Não tem dono, não tem medo, não tem paciência.',
+    raridade: 'comum',
+    nivel: 0,
+    atk: 340,
+    def: 160,
     eva: 0,
   },
 
@@ -113,6 +153,56 @@ export const CARTAS: CartaTCG[] = [
     def: 450,
     eva: 40,
   },
+  {
+    id: 'arqueiro-real',
+    nome: 'Arqueiro Real',
+    descricao: 'Flecha certeira desde a primeira guerra.',
+    raridade: 'comum',
+    nivel: 1,
+    atk: 850,
+    def: 600,
+    eva: 12,
+  },
+  {
+    id: 'escudeiro',
+    nome: 'Escudeiro Leal',
+    descricao: 'O escudo é pesado. A levidade, mais ainda.',
+    raridade: 'comum',
+    nivel: 1,
+    atk: 500,
+    def: 1200,
+    eva: 5,
+  },
+  {
+    id: 'lobo-cinzento',
+    nome: 'Lobo Cinzento',
+    descricao: 'A alcateia é forte. Ele é o dobro.',
+    raridade: 'comum',
+    nivel: 1,
+    atk: 950,
+    def: 550,
+    eva: 18,
+  },
+  {
+    id: 'mercenario',
+    nome: 'Mercenário',
+    descricao: 'Luta por ouro. Morre por ouro. Às vezes.',
+    raridade: 'comum',
+    nivel: 1,
+    atk: 1100,
+    def: 400,
+    eva: 8,
+  },
+  {
+    id: 'monge-guerra',
+    nome: 'Monge da Guerra',
+    descricao: 'A paz é uma arma. Ele a empunha.',
+    raridade: 'incomum',
+    nivel: 1,
+    atk: 800,
+    def: 900,
+    eva: 10,
+  },
 
   // -- Nível 2: o corpo do exército ---------------------------------------
   {
@@ -165,6 +255,36 @@ export const CARTAS: CartaTCG[] = [
     def: 1900,
     eva: 5,
   },
+  {
+    id: 'cavaleiro-ferro',
+    nome: 'Cavaleiro de Ferro',
+    descricao: 'A armadura é dele. A guerra, também.',
+    raridade: 'incomum',
+    nivel: 2,
+    atk: 1300,
+    def: 1100,
+    eva: 8,
+  },
+  {
+    id: 'bruxa-cinzas',
+    nome: 'Bruxa das Cinzas',
+    descricao: 'Queima o que toca. Abraça o que queima.',
+    raridade: 'incomum',
+    nivel: 2,
+    atk: 1350,
+    def: 750,
+    eva: 15,
+  },
+  {
+    id: 'troll-ponte',
+    nome: 'Troll da Ponte',
+    descricao: 'Cobra pedágio em carne. Ninguém reclama.',
+    raridade: 'raro',
+    nivel: 2,
+    atk: 1500,
+    def: 1000,
+    eva: 5,
+  },
 
   // -- Nível 3: elite ------------------------------------------------------
   {
@@ -196,6 +316,36 @@ export const CARTAS: CartaTCG[] = [
     atk: 1300,
     def: 900,
     eva: 15,
+  },
+  {
+    id: 'cavaleiro-sombra',
+    nome: 'Cavaleiro Sombra',
+    descricao: 'A sombra dele chega antes dele.',
+    raridade: 'raro',
+    nivel: 3,
+    atk: 1600,
+    def: 1000,
+    eva: 20,
+  },
+  {
+    id: 'golem-granito',
+    nome: 'Golem de Granito',
+    descricao: 'A montanha andou. A montanha luta.',
+    raridade: 'raro',
+    nivel: 3,
+    atk: 1400,
+    def: 1600,
+    eva: 3,
+  },
+  {
+    id: 'serpente-gelo',
+    nome: 'Serpente de Gelo',
+    descricao: 'O frio dela não mata — ele espera.',
+    raridade: 'raro',
+    nivel: 3,
+    atk: 1550,
+    def: 950,
+    eva: 12,
   },
 
   // -- Nível 4: oficiais ---------------------------------------------------
@@ -229,6 +379,36 @@ export const CARTAS: CartaTCG[] = [
     def: 1400,
     eva: 28,
   },
+  {
+    id: 'mago-tempestade',
+    nome: 'Mago da Tempestade',
+    descricao: 'O raio obedece. A tempestade, também.',
+    raridade: 'epico',
+    nivel: 4,
+    atk: 2000,
+    def: 1200,
+    eva: 15,
+  },
+  {
+    id: 'golem-obsidiana',
+    nome: 'Golem de Obsidiana',
+    descricao: 'Vidro vulcânico com pés. E com fúria.',
+    raridade: 'epico',
+    nivel: 4,
+    atk: 1800,
+    def: 1600,
+    eva: 4,
+  },
+  {
+    id: 'valquiria',
+    nome: 'Valquíria',
+    descricao: 'Escolhe os que morrem. E os que matam.',
+    raridade: 'epico',
+    nivel: 4,
+    atk: 2200,
+    def: 1400,
+    eva: 18,
+  },
 
   // -- Nível 5: campeões ---------------------------------------------------
   {
@@ -250,6 +430,36 @@ export const CARTAS: CartaTCG[] = [
     atk: 2200,
     def: 2300,
     eva: 18,
+  },
+  {
+    id: 'dragao-fogo',
+    nome: 'Dragão de Fogo',
+    descricao: 'O incêndio tem nome. O nome dele é este.',
+    raridade: 'epico',
+    nivel: 5,
+    atk: 2600,
+    def: 1900,
+    eva: 8,
+  },
+  {
+    id: 'colosso-ferro',
+    nome: 'Colosso de Ferro',
+    descricao: 'A guerra fez dele um monumento. Ele fez da guerra um esporte.',
+    raridade: 'epico',
+    nivel: 5,
+    atk: 2300,
+    def: 2500,
+    eva: 3,
+  },
+  {
+    id: 'anjo-guerra',
+    nome: 'Anjo da Guerra',
+    descricao: 'As asas são de espada. O julgamento, de fogo.',
+    raridade: 'epico',
+    nivel: 5,
+    atk: 2500,
+    def: 2000,
+    eva: 15,
   },
 
   // -- Nível 6: lendas -----------------------------------------------------
@@ -273,6 +483,48 @@ export const CARTAS: CartaTCG[] = [
     def: 2900,
     eva: 5,
   },
+  {
+    id: 'fenix',
+    nome: 'Fênix',
+    descricao: 'Morre todo nascer do sol. Renasce todo pôr.',
+    raridade: 'lendario',
+    nivel: 6,
+    atk: 2700,
+    def: 2200,
+    eva: 20,
+  },
+  {
+    id: 'leviata',
+    nome: 'Leviatã',
+    descricao: 'O mar tem fundo. Ele não.',
+    raridade: 'lendario',
+    nivel: 6,
+    atk: 2800,
+    def: 2300,
+    eva: 8,
+  },
+
+  // -- Nível 7: raras ------------------------------------------------------
+  {
+    id: 'dragao-gelo',
+    nome: 'Dragão de Gelo',
+    descricao: 'O inverno tem dentes. Ele é o sorriso.',
+    raridade: 'lendario',
+    nivel: 7,
+    atk: 3200,
+    def: 2700,
+    eva: 10,
+  },
+  {
+    id: 'tita-guerra',
+    nome: 'Titã da Guerra',
+    descricao: 'A montanha que decidiu lutar.',
+    raridade: 'lendario',
+    nivel: 7,
+    atk: 3100,
+    def: 2900,
+    eva: 5,
+  },
 
   // -- Nível 8: o ápice ----------------------------------------------------
   {
@@ -293,9 +545,9 @@ export const CARTAS_POR_ID: Record<string, CartaTCG> = Object.fromEntries(
 );
 
 /**
- * Deck padrão de 20 cartas: 8 de nível 0 (o povo), 6 de
- * nível 1, 4 de nível 2-3 e 2 de nível 2-4. Cada posição
- * vira um uid único (`id#posição`) na criação do duelo.
+ * Deck padrão de 30 cartas: 8 de nível 0 (o povo), 10 de
+ * nível 1, 6 de nível 2, 4 de nível 3 e 2 de nível 4.
+ * Cada posição vira um uid único (`id#posição`) na criação do duelo.
  */
 export function deckPadrao(): string[] {
   return [
@@ -303,14 +555,19 @@ export function deckPadrao(): string[] {
     'gato-de-rua', 'gato-de-rua',
     'tocha-vigia', 'tocha-vigia',
     'cria-morcego', 'cria-morcego',
+    'pescador', 'menino-erro',
+    'velha-moleque', 'cao-vadio',
     'recruta-espada', 'recruta-espada',
     'golem-ferro', 'golem-ferro',
     'goblin-saqueador', 'goblin-saqueador',
-    'sereia-vale',
-    'espirito-abismo',
-    'arqueira-vigia',
-    'ogro-masmorra',
-    'elmo-abismo',
-    'dragao-jovem',
+    'morcego-sombra', 'morcego-sombra',
+    'gato-feral', 'gato-feral',
+    'arqueiro-real', 'escudeiro',
+    'lobo-cinzento', 'mercenario',
+    'monge-guerra',
+    'sereia-vale', 'espirito-abismo',
+    'arqueira-vigia', 'elmo-abismo',
+    'escudo-carvalho', 'cavaleiro-ferro',
+    'bruxa-cinzas', 'troll-ponte',
   ];
 }
