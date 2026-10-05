@@ -1,0 +1,86 @@
+name: Deploy no GitHub Pages
+
+# Publica em https://kazenski.github.io/tcg-imperiall-2026/ a cada push
+# na main. Sem isso, o Pages so atualiza quando alguem faz push na pasta gh-pages.
+on:
+  push:
+    branches: [main]
+  # Permite rodar a build sem commitar, pelo aba Actions do GitHub.
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Serializa os deploys: dois pushes seguidos nao podem disputar o ambiente.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Instalar dependencias
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      # `base` do Vite esta fixado em /tcg-imperiall-2026/. Se um dia este
+      # repo virar site de usuario (github.io/Kazenski), mude o base no vite.config.ts
+      # E este check falha — que e o ponto: avisa em vez de subir 404 silencioso.
+      - name: Verificar caminhos base
+        run: |
+          grep -q '/tcg-imperiall-2026/assets/' dist/index.html \
+            || { echo "::error::base do Vite nao bate com o prefixo do Pages"; exit 1; }
+
+      # `configure-pages` falha se o Pages ainda nao foi habilitado no repo
+      # (fonte: Settings > Pages > Source = GitHub Actions). Nao queremos que
+      # isso derrube o build: o job de build continua verde e o aviso abaixo
+      # diz o que fazer. O Pages liga no primeiro push depois disso.
+      - name: Configurar Pages
+        id: pages
+        continue-on-error: true
+        uses: actions/configure-pages@v5
+
+      - name: Avisar se o Pages ainda nao estiver habilitado
+        if: steps.pages.outcome == 'failure'
+        run: |
+          echo "::warning::GitHub Pages nao esta habilitado neste repositorio."
+          echo "::warning::Habilite em: Settings > Pages > Build and deployment > Source = GitHub Actions"
+          echo "::warning::Depois faca push novamente e o deploy roda sozinho."
+
+      - name: Enviar artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy
+        id: deployment
+        # Mesmo motivo do `continue-on-error` acima: sem o Pages habilitado o
+        # deploy nao tem onde publicar. Build verde, aviso claro.
+        continue-on-error: true
+        uses: actions/deploy-pages@v4
+
+      - name: Resumo
+        run: |
+          if [ "${{ steps.deployment.outcome }}" != "success" ]; then
+            echo "Deploy nao publicado: habilite o Pages no repositorio."
+            echo "https://github.com/Kazenski/tcg-imperiall-2026/settings/pages"
+          fi
