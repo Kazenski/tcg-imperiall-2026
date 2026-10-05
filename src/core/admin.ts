@@ -1,12 +1,19 @@
 /**
- * Admin de cartas — CRUD da coleção do jogador em localStorage.
+ * Admin de cartas — CRUD da coleção do jogador.
  *
- * As cartas cadastradas aqui entram no SEU deck no próximo
- * duelo (o oponente continua com o deck padrão). Nada aqui
- * é código de regra: só armazenamento e validação de formulário.
+ * Arquitetura em camadas:
  *
- * O localStorage não existe em Node; `carregarCartas()` devolve
- * [] quando indisponível (os testes plantam um dublê quando precisam).
+ *   1. localStorage  → rascunho local (rápido, offline, sem config)
+ *   2. cartas-admin.json no repo → coleção OFICIAL (versionada no git)
+ *   3. GitHub Pages → o jogo carrega o JSON oficial no boot (fetch)
+ *
+ * Fluxo:
+ *   - Admin clica Salvar → localStorage
+ *   - Botão Exportar → baixa o cartas-admin.json (localStorage → arquivo)
+ *   - Você commita o JSON no repo (ou pede: "commita as cartas")
+ *   - O jogo carrega o JSON do GitHub e mescla com o localStorage
+ *
+ * Nada aqui é código de regra: só armazenamento e validação.
  */
 
 import type { CartaTCG } from './types.ts';
@@ -15,6 +22,12 @@ import type { Rarity } from './raridade.ts';
 const CHAVE = 'imperiall-tcg:cartas:v1';
 
 export const RARIDADES: Rarity[] = ['comum', 'incomum', 'raro', 'epico', 'lendario'];
+
+/** URL do JSON oficial no GitHub Pages (deploy). */
+export const URL_CARTAS_OFICIAL =
+  'https://kazenski.github.io/tcg-imperiall-2026/cartas-admin.json';
+
+// --- localStorage (rascunho local) -----------------------------------
 
 /** Cartas cadastradas pelo admin. [] se nada ainda (ou sem storage). */
 export function carregarCartas(): CartaTCG[] {
@@ -31,6 +44,52 @@ export function carregarCartas(): CartaTCG[] {
 export function salvarCartas(cartas: CartaTCG[]): void {
   localStorage.setItem(CHAVE, JSON.stringify(cartas));
 }
+
+// --- JSON oficial (GitHub) --------------------------------------------
+
+/**
+ * Carrega o cartas-admin.json do GitHub Pages.
+ * Falha silenciosa ([]) se o arquivo não existe ainda ou
+ * se está offline — o localStorage cobre esse caso.
+ */
+export async function carregarCartasOficiais(): Promise<CartaTCG[]> {
+  try {
+    const resposta = await fetch(URL_CARTAS_OFICIAL, { cache: 'no-store' });
+    if (!resposta.ok) return [];
+    const dados = (await resposta.json()) as CartaTCG[];
+    return Array.isArray(dados) ? dados.filter((c) => c != null) : [];
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Mescla o JSON oficial com o localStorage: o oficial tem
+ * prioridade (é a coleção versionada); o local complementa
+ * com cartas que ainda não foram commitadas.
+ */
+export function mesclarCartas(oficiais: CartaTCG[], locais: CartaTCG[]): CartaTCG[] {
+  const porId = new Map<string, CartaTCG>();
+  for (const c of locais) porId.set(c.id, c);
+  for (const c of oficiais) porId.set(c.id, c); // oficial sobrescreve
+  return [...porId.values()];
+}
+
+// --- Exportar / Importar -----------------------------------------------
+
+/** Serializa as cartas como JSON bonito (para o arquivo do repo). */
+export function exportarJson(cartas: CartaTCG[]): string {
+  return JSON.stringify(cartas, null, 2) + '\n';
+}
+
+/** Lê um cartas-admin.json (do disco) e devolve as cartas válidas. */
+export function importarJson(texto: string): CartaTCG[] {
+  const dados = JSON.parse(texto) as CartaTCG[];
+  if (!Array.isArray(dados)) throw new Error('o arquivo precisa ser um array de cartas');
+  return dados.filter((c) => c != null && typeof c.id === 'string');
+}
+
+// --- Validação ----------------------------------------------------------
 
 /** slug estável a partir do nome (acentos viram letras puras). */
 export function idParaNome(nome: string): string {

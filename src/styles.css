@@ -471,3 +471,13 @@ body {
   opacity: 0.7;
   font-size: 0.78rem;
 }
+
+/* --- Sincronização com o GitHub --------------------------------- */
+
+.admin-sync-info {
+  font-size: 0.78rem;
+  opacity: 0.7;
+  line-height: 1.5;
+  white-space: pre-line;
+  margin: 0 0 8px;
+}

@@ -2,6 +2,12 @@
  * UI do duelo — DOM/CSS. Sem Phaser na v1: um TCG é cartas e
  * texto; o DOM já faz isso bem (e o scroll da mão agradece).
  *
+ * Coleção de cartas (arquitetura em camadas):
+ *   - data/cartas-admin.json → oficial, no repo (versionada no git)
+ *   - localStorage → rascunho local (offline)
+ *   - O jogo carrega o oficial no boot e mescla com o local.
+ *   - Botões Exportar/Importar sincronizam os dois.
+ *
  * Interações:
  *   - clique numa carta da MÃO      -> invoca (só valida level)
  *   - clique numa carta do SEU campo -> seleciona como atacante
@@ -10,7 +16,7 @@
  *       clique numa carta inimiga   -> ataca aquela criatura
  *       clique no LP inimigo        -> ataque direto ao jogador
  *   - "Finalizar turno"             -> a IA joga o turno do oponente
- *   - "Admin"                        -> cadastra cartas (localStorage)
+ *   - "Admin"                        -> cadastra cartas + exporta/importa
  *
  * O estado nunca é mutado aqui: cada ação vem do `core/` como um
  * estado novo, e a tela é redesenhada do zero (o estado é pequeno).
@@ -28,10 +34,14 @@ import {
 } from '../core/duelo.ts';
 import { CARTAS_POR_ID, deckPadrao } from '../data/cartas.ts';
 import {
-  RARIDADES,
+  URL_CARTAS_OFICIAL,
   carregarCartas,
+  carregarCartasOficiais,
   cartaValida,
+  exportarJson,
   idParaNome,
+  importarJson,
+  mesclarCartas,
   salvarCartas,
 } from '../core/admin.ts';
 import { RARITY_CLASS } from '../core/raridade.ts';
@@ -39,6 +49,7 @@ import type { Rarity } from '../core/raridade.ts';
 import {
   cartaIdDe,
   type Alvo,
+  type CartaTCG,
   type EstadoDuelo,
   type Instancia,
   type Jogador,
@@ -52,8 +63,16 @@ let selecionado: string | null = null;
 let adminAberto = false;
 /** Estado do duelo em curso. */
 let estado: EstadoDuelo;
+/** Cartas do jogador: oficiais (GitHub) + locais (localStorage). */
+let cartas: CartaTCG[];
 
-export function iniciar(): void {
+export async function iniciar(): Promise<void> {
+  // 1. Carrega o oficial do GitHub e mescla com o local.
+  const [oficiais, locais] = await Promise.all([
+    carregarCartasOficiais(),
+    Promise.resolve(carregarCartas()),
+  ]);
+  cartas = mesclarCartas(oficiais, locais);
   estado = novoDuelo();
   render();
 }
@@ -65,9 +84,9 @@ function novoDuelo(): EstadoDuelo {
   });
 }
 
-/** Seu deck = padrão + cartas cadastradas no admin. */
+/** Seu deck = padrão + cartas cadastradas (oficiais + locais). */
 function meuDeck(): string[] {
-  return [...deckPadrao(), ...carregarCartas().map((c) => c.id)];
+  return [...deckPadrao(), ...cartas.map((c) => c.id)];
 }
 
 function aviso(mensagem: string): void {
@@ -310,7 +329,7 @@ function adminPanel(): HTMLElement {
   form.append(
     campoTexto('nome', 'Nome da carta', 'Ex: Cavaleiro do Abismo'),
     campoTexto('descricao', 'Descrição', 'Ex: Jurou lealdade ao trono de ruínas.'),
-    campoSelect('raridade', 'Raridade', RARIDADES),
+    campoSelect('raridade', 'Raridade', ['comum', 'incomum', 'raro', 'epico', 'lendario']),
     campoNumero('nivel', 'Nível exigido (0-8)', 0, 8),
     campoNumero('atk', 'ATK', 0, 99999),
     campoNumero('def', 'DEF', 0, 99999),
@@ -351,22 +370,23 @@ function adminPanel(): HTMLElement {
       def: Number(dados.get('def') ?? 0),
       eva: Number(dados.get('eva') ?? 0),
     };
-    const ids = new Set([
-      ...Object.keys(CARTAS_POR_ID),
-      ...carregarCartas().map((c) => c.id),
-    ]);
-    const motivo = cartaValida(carta, ids);
+    const motivo = cartaValida(
+      carta,
+      new Set([...Object.keys(CARTAS_POR_ID), ...cartas.map((c) => c.id)]),
+    );
     if (motivo) {
       erro.textContent = motivo;
       return;
     }
-    salvarCartas([...carregarCartas(), carta as never]);
+    cartas = [...cartas, carta as CartaTCG];
+    salvarCartas(cartas);
     erro.textContent = '';
     form.reset();
     render();
   });
 
   painel.append(form);
+  painel.append(sincronizarPainel());
   painel.append(listaAdmin());
   overlay.append(painel);
   overlay.addEventListener('click', (e) => {
@@ -378,27 +398,88 @@ function adminPanel(): HTMLElement {
   return overlay;
 }
 
+/** Painel Exportar/Importar — sincroniza localStorage ↔ JSON do repo. */
+function sincronizarPainel(): HTMLElement {
+  const sec = document.createElement('section');
+  sec.className = 'admin-sync';
+  const titulo = document.createElement('h3');
+  titulo.textContent = 'Sincronizar com o GitHub';
+  sec.append(titulo);
+
+  const info = document.createElement('p');
+  info.className = 'admin-sync-info';
+  info.textContent =
+    `Oficial: ${URL_CARTAS_OFICIAL}\n` +
+    'Salve as cartas no localStorage, clique em Exportar, commite o JSON no repo e faça o deploy.';
+  sec.append(info);
+
+  const botoes = document.createElement('div');
+  botoes.className = 'admin-botoes';
+
+  const exportar = document.createElement('button');
+  exportar.className = 'botao-sec';
+  exportar.textContent = 'Exportar JSON';
+  exportar.addEventListener('click', () => {
+    const blob = new Blob([exportarJson(cartas)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'cartas-admin.json';
+    a.click();
+    URL.revokeObjectURL(url);
+  });
+
+  const importar = document.createElement('button');
+  importar.className = 'botao-sec';
+  importar.textContent = 'Importar JSON';
+  const arquivo = document.createElement('input');
+  arquivo.type = 'file';
+  arquivo.accept = 'application/json';
+  arquivo.style.display = 'none';
+  arquivo.addEventListener('change', async () => {
+    const file = arquivo.files?.[0];
+    if (!file) return;
+    try {
+      const importadas = importarJson(await file.text());
+      const ids = new Set(cartas.map((c) => c.id));
+      const novas = importadas.filter((c) => !ids.has(c.id));
+      cartas = [...cartas, ...novas];
+      salvarCartas(cartas);
+      aviso(`Importadas ${novas.length} cartas do arquivo.`);
+      render();
+    } catch (e) {
+      aviso(`Erro ao importar: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  });
+  importar.addEventListener('click', () => arquivo.click());
+
+  botoes.append(exportar, importar, arquivo);
+  sec.append(botoes);
+  return sec;
+}
+
 function listaAdmin(): HTMLElement {
   const sec = document.createElement('section');
   sec.className = 'admin-lista';
   const titulo = document.createElement('h3');
-  titulo.textContent = `Suas cartas (${carregarCartas().length}) — entram no seu deck`;
+  titulo.textContent = `Suas cartas (${cartas.length}) — entram no seu deck`;
   sec.append(titulo);
   const lista = document.createElement('ul');
-  for (const carta of carregarCartas()) {
+  for (const carta of cartas) {
     const li = document.createElement('li');
     li.innerHTML = `<strong>${carta.nome}</strong> <span class="admin-stats">Nv ${carta.nivel} · ⚔${carta.atk} · 🛡${carta.def} · 💨${carta.eva}%</span>`;
     const remover = document.createElement('button');
     remover.className = 'botao-sec';
     remover.textContent = 'remover';
     remover.addEventListener('click', () => {
-      salvarCartas(carregarCartas().filter((c) => c.id !== carta.id));
+      cartas = cartas.filter((c) => c.id !== carta.id);
+      salvarCartas(cartas);
       render();
     });
     li.append(remover);
     lista.append(li);
   }
-  if (carregarCartas().length === 0) {
+  if (cartas.length === 0) {
     const vazio = document.createElement('li');
     vazio.className = 'admin-vazio';
     vazio.textContent = 'Nenhuma carta cadastrada ainda.';

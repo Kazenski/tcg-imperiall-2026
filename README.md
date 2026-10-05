@@ -5,6 +5,8 @@ fantasy do [imperiall idle](https://github.com/Kazenski/jogo_idle_imperiall_2026
 criaturas com **ATK, DEF e EVA**, invocadas pelo **level da partida**.
 Roda no navegador como PWA (instalável, offline).
 
+**Jogue em:** <https://kazenski.github.io/tcg-imperiall-2026/>
+
 **Inspiração:** a dinâmica de duelo de *Yu-Gi-Oh! Forbidden
 Memories Recompiled* — campo com zonas, invocação por nível,
 turnos, batalha entre criaturas — recriada do zero para a web.
@@ -19,7 +21,7 @@ turnos, batalha entre criaturas — recriada do zero para a web.
   da carta** e uma zona livre. Cartas de **nível 0** existem
   para o duelo acontecer mesmo em level 0.
 - **Level na partida**: começa em **10** e **só desce** — a cada
-  **100 de dano recebido cumulativo**, cai 1 (mínimo 0).
+  **100 de dano recebido cumulativo**, cai 1 (mínimum 0).
 - **Modo ataque/defesa** (cada criatura ataca 1× por turno):
   - alvo em **ataque**: atk>def destrói e fere a diferença;
     atk<def destrói o atacante e rebate a diferença; empate
@@ -34,9 +36,42 @@ turnos, batalha entre criaturas — recriada do zero para a web.
 ## Admin de cartas
 
 O botão **Admin** abre o cadastro: nome, descrição, raridade,
-nível exigido (0-8), ATK, DEF e EVA. As cartas salvas
-(localStorage) entram no **seu deck** no próximo duelo; o
-opponente continua com o deck padrão.
+nível exigido (0-8), ATK, DEF e EVA. As cartas salvas entram no
+**seu deck** no próximo duelo; o oponente continua com o deck
+padrão.
+
+### Arquitetura da coleção (3 camadas)
+
+```
+┌─────────────────────┐
+│ data/cartas-admin.json │  ← OFICIAL: versionada no git
+│ (no repo)              │     (deploy via GitHub Pages)
+└──────────┬──────────┘
+           │ fetch no boot
+┌──────────▼──────────┐
+│ Jogo (navegador)    │  ← mescla oficial + local
+└──────────┬──────────┘
+           │ salvar/remover
+┌──────────▼──────────┐
+│ localStorage        │  ← rascunho local (offline)
+└─────────────────────┘
+```
+
+**Fluxo de sincronização:**
+
+1. **Salvar** no admin → grava no `localStorage` (rápido, offline)
+2. **Exportar JSON** → baixa o `cartas-admin.json`
+3. **Commit no repo** → versiona as cartas (ou peça: *"commita as cartas"*)
+4. **Deploy** → o jogo carrega o JSON oficial no boot e mescla com o local
+
+| Camada | Onde | Prós | Contras |
+|---|---|---|---|
+| **localStorage** | navegador | Offline, zero config | Só naquele navegador |
+| **cartas-admin.json** | repo (git) | Versionado, compartilhado | Precisa commit + deploy |
+| **Firebase** (futuro) | nuvem | Sincroniza em tempo real | Requer projeto + regras |
+
+Para brincar, o **GitHub é o mais prático**: sem configuração,
+com histórico de cada carta no git.
 
 ## Rodando
 
@@ -71,8 +106,15 @@ Consequências práticas:
   estado novo. Trocar DOM por Canvas/Phaser não toca em regra.
 - A IA do oponente (`core/ia.ts`) é só mais um consumidor
   do core — substituível por rede no futuro.
-- O admin (`core/admin.ts`) é CRUD puro de localStorage —
-  as cartas cadastradas entram no deck do jogador.
+- O admin (`core/admin.ts`) é CRUD puro: localStorage para o
+  rascunho, JSON no repo para a coleção oficial.
+
+## Deploy
+
+**GitHub Actions** (não branch `gh-pages`): o workflow
+`.github/workflows/pages.yml` roda a cada push na `main`,
+faz `npm ci` + `npm run build` e publica o `dist/`. O Pages
+precisa estar com **Source = GitHub Actions** (Settings → Pages).
 
 ## Próximos passos (ideias)
 
