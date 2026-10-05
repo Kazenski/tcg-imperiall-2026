@@ -196,7 +196,7 @@ body {
   align-items: center;
   justify-content: center;
   gap: 8px;
-  background: linear-gradient(135deg, #1a1d28, #12151c);
+  background: url('/tcg-imperiall-2026/imagens/verso-deck.png') center/cover no-repeat, linear-gradient(135deg, #1a1d28, #12151c);
   border: 2px solid var(--borda);
   border-radius: 8px;
 }
@@ -271,6 +271,7 @@ body {
 .carta.vertical {
   min-height: 154px;
   padding: 6px;
+  background: url('/tcg-imperiall-2026/imagens/moldura-carta.png') center/cover no-repeat, var(--painel);
 }
 
 .carta-nome {
