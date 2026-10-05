@@ -2,22 +2,22 @@
  * UI do duelo — DOM/CSS. Sem Phaser na v1: um TCG é cartas e
  * texto; o DOM já faz isso bem.
  *
- * Visual estilo Yu-Gi-Oh: cartas verticais (nome no topo,
- * nível, stats), mão com scroll horizontal, indicadores de
- * fase, deck clicável na fase de compra.
+ * Layout em 3 colunas:
+ *   esquerda  → log do duelo
+ *   centro    → fases, decks, campos, mão
+ *   direita  → detalhes da carta selecionada (amplificada)
  *
- * Fases do turno:
- *   compra      → clica no deck para comprar 1 carta
- *   principal   → invoca (máx 1 monstro/turno), muda modo
- *   combate     → seleciona atacante e dá alvo
- *   finalizacao → avança sem ações
- *   fim         → última olhada (sem ações)
+ * Efeitos de ataque:
+ *   - vulto: projétil do atacante até o alvo
+ *   - fogo: chama no HP quando ataque direto
+ *   - seta: linha do atacante até o alvo
+ *
+ * A IA joga com delays (para o jogador ver as fases).
  *
  * O estado nunca é mutado aqui: cada ação vem do `core/` como um
  * estado novo, e a tela é redesenhada do zero.
  */
 
-import { iaJogarTurno } from '../core/ia.ts';
 import {
   alternarModo,
   atacar,
@@ -62,8 +62,10 @@ let adminAberto = false;
 let estado: EstadoDuelo;
 /** Cartas do jogador: oficiais (GitHub) + locais (localStorage). */
 let cartas: CartaTCG[];
-/** Animação de ataque em curso (uid da carta atingida). */
-let animacaoAlvo: string | null = null;
+/** Carta selecionada para detalhes (uid ou null). */
+let detalheUid: string | null = null;
+/** Animação de ataque em curso. */
+let animacao: { tipo: 'vulto' | 'fogo' | 'seta'; de: string; para: string } | null = null;
 
 export async function iniciar(): Promise<void> {
   const [oficiais, locais] = await Promise.all([
@@ -94,8 +96,12 @@ function aviso(mensagem: string): void {
 
 function render(): void {
   app.innerHTML = '';
-  app.append(hud(), barraFases(), deckDoJogador(), campoDo(1), campoDo(0), maoDo(), logPanel());
+  const layout = document.createElement('div');
+  layout.className = 'layout';
+  layout.append(logPanel(), centroPainel(), detalhesPanel());
+  app.append(hud(), layout);
   if (adminAberto) app.append(adminPanel());
+  if (animacao) aplicarAnimacao();
 }
 
 // --- HUD ---------------------------------------------------------------
@@ -143,6 +149,7 @@ function hud(): HTMLElement {
   botaoNovo.addEventListener('click', () => {
     estado = novoDuelo();
     selecionado = null;
+    detalheUid = null;
     render();
   });
   const botaoFase = document.createElement('button');
@@ -150,17 +157,131 @@ function hud(): HTMLElement {
   botaoFase.textContent = estado.fase === 'fim' ? 'Passar turno' : 'Próxima fase';
   botaoFase.addEventListener('click', () => {
     if (estado.vencedor !== null) return;
-    let s = proximaFase(estado).estado;
-    // Se a IA passou a vez (vez 1), ela joga o turno inteiro.
-    if (s.vez === 1 && s.vencedor === null) s = iaJogarTurno(s);
-    selecionado = null;
-    estado = s;
-    render();
+    avancarFase();
   });
   acoes.append(botaoAdmin, botaoNovo, botaoFase);
 
   bar.append(turno, placar, acoes);
   return bar;
+}
+
+/** Avança a fase; se a vez passar para a IA, ela joga com delays. */
+async function avancarFase(): Promise<void> {
+  let s = proximaFase(estado).estado;
+  selecionado = null;
+  estado = s;
+  render();
+  // Se a vez passou para a IA, ela joga o turno inteiro com tempo.
+  if (s.vez === 1 && s.vencedor === null) {
+    await iaComDelays();
+  }
+}
+
+/** A IA joga o turno inteiro com delays entre as fases. */
+async function iaComDelays(): Promise<void> {
+  const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+  let s = estado;
+  const jogador = s.vez;
+
+  // 1. Fase de compra.
+  if (s.fase === 'compra' && s.vencedor === null) {
+    await sleep(800);
+    s = comprarCarta(s, jogador).estado;
+    estado = s;
+    render();
+  }
+
+  // 2. Fase principal: invoca 1 monstro.
+  if (s.fase === 'principal' && s.vencedor === null) {
+    await sleep(800);
+    const mao = [...s.mao[jogador]!].sort((a, b) => {
+      const na = CARTAS_POR_ID[cartaIdDe(a)]!.nivel;
+      const nb = CARTAS_POR_ID[cartaIdDe(b)]!.nivel;
+      return nb - na;
+    });
+    for (const uid of mao) {
+      if (motivoNaoPodeInvocar(s, jogador, uid) === null) {
+        s = invocar(s, jogador, uid).estado;
+        estado = s;
+        render();
+        break;
+      }
+    }
+    await sleep(600);
+    s = proximaFase(s).estado;
+    estado = s;
+    render();
+  }
+
+  // 3. Fase de combate: cada criatura ataca.
+  if (s.fase === 'combate' && s.vencedor === null) {
+    for (let i = 0; i < s.campo[jogador]!.length && s.vencedor === null; i++) {
+      const zona = s.campo[jogador]![i];
+      if (zona == null || zona.atacou || zona.modo !== 'ataque') continue;
+      await sleep(700);
+      const alvos = s.campo[adversario(jogador)]!
+        .map((z, indice) => ({ z, indice }))
+        .filter((e): e is { z: Instancia; indice: number } => e.z != null);
+      const atacante = CARTAS_POR_ID[zona.cartaId]!;
+      const venciveis = alvos
+        .map((e) => ({ e, alvo: CARTAS_POR_ID[e.z.cartaId]! }))
+        .filter((x) => atacante.atk > x.alvo.def)
+        .sort((a, b) => a.alvo.def - b.alvo.def);
+
+      if (venciveis.length > 0) {
+        const escolha = venciveis[0]!;
+        if (
+          motivoNaoPodeAtacar(s, jogador, zona.uid, {
+            tipo: 'carta',
+            uid: escolha.e.z.uid,
+          }) === null
+        ) {
+          s = atacar(s, jogador, zona.uid, {
+            tipo: 'carta',
+            uid: escolha.e.z.uid,
+          }).estado;
+          estado = s;
+          render();
+          await sleep(700);
+        }
+      } else if (motivoNaoPodeAtacar(s, jogador, zona.uid, { tipo: 'jogador' }) === null) {
+        s = atacar(s, jogador, zona.uid, { tipo: 'jogador' }).estado;
+        estado = s;
+        render();
+        await sleep(700);
+      }
+    }
+    s = proximaFase(s).estado;
+    estado = s;
+    render();
+  }
+
+  // 4. Finalização → fim → termina turno.
+  if (s.fase === 'finalizacao' && s.vencedor === null) {
+    await sleep(500);
+    s = proximaFase(s).estado;
+    estado = s;
+    render();
+  }
+  if (s.fase === 'fim' && s.vencedor === null) {
+    await sleep(500);
+    s = proximaFase(s).estado;
+    estado = s;
+    render();
+  }
+}
+
+function adversario(jogador: 0 | 1): 0 | 1 {
+  return jogador === 0 ? 1 : 0;
+}
+
+// --- Centro (fases, decks, campos, mão) -------------------------------
+
+function centroPainel(): HTMLElement {
+  const centro = document.createElement('div');
+  centro.className = 'centro';
+  centro.append(barraFases(), deckDo(1), campoDo(1), campoDo(0), deckDo(0), maoDo());
+  return centro;
 }
 
 /** Barra de fases do turno (estilo YGO). */
@@ -199,23 +320,23 @@ function descricaoFase(fase: string): string {
   }
 }
 
-// --- Deck (fase de compra) ---------------------------------------------
+// --- Deck --------------------------------------------------------------
 
-function deckDoJogador(): HTMLElement {
+function deckDo(lado: Jogador): HTMLElement {
   const sec = document.createElement('section');
   sec.className = 'deck';
   const titulo = document.createElement('h2');
-  titulo.textContent = `Deck (${estado.deck[0]!.length})`;
+  titulo.textContent = `Deck ${lado === 0 ? '(você)' : '(oponente)'} (${estado.deck[lado]!.length})`;
   sec.append(titulo);
 
   const pilha = document.createElement('div');
   pilha.className = 'deck-pilha';
   const carta = document.createElement('div');
-  carta.className = 'carta deck-carta';
+  carta.className = 'carta vertical deck-carta';
   carta.innerHTML = `
     <span class="deck-verso">🂠</span>
-    <span class="deck-texto">Clique para comprar</span>`;
-  if (estado.fase === 'compra' && estado.vez === 0 && estado.vencedor === null) {
+    <span class="deck-texto">${lado === 0 ? 'Clique para comprar' : 'Oponente'}</span>`;
+  if (lado === 0 && estado.fase === 'compra' && estado.vez === 0 && estado.vencedor === null) {
     carta.classList.add('clicavel');
     carta.addEventListener('click', () => {
       const r = comprarCarta(estado, 0);
@@ -254,9 +375,9 @@ function cartaElemento(lado: Jogador, instancia: Instancia): HTMLElement {
   const carta = CARTAS_POR_ID[instancia.cartaId]!;
   const el = document.createElement('div');
   el.className = `carta vertical ${RARITY_CLASS[carta.raridade]}`;
+  el.dataset.uid = instancia.uid;
   if (instancia.atacou) el.classList.add('atacou');
   if (selecionado === instancia.uid) el.classList.add('selecionada');
-  if (animacaoAlvo === instancia.uid) el.classList.add('atingida');
   el.innerHTML = `
     <span class="carta-nome">${carta.nome}</span>
     <span class="carta-nivel">Nv ${carta.nivel}</span>
@@ -265,6 +386,12 @@ function cartaElemento(lado: Jogador, instancia: Instancia): HTMLElement {
       <b class="def">🛡 ${carta.def}</b>
     </span>`;
   el.title = `${carta.nome} — nível ${carta.nivel} (exige level ${carta.nivel} na partida)`;
+
+  // Clique para ver detalhes (sempre).
+  el.addEventListener('click', () => {
+    detalheUid = instancia.uid;
+    render();
+  });
 
   if (lado === 0) {
     // Badge de modo: alterna ataque/defesa (fase principal).
@@ -278,12 +405,13 @@ function cartaElemento(lado: Jogador, instancia: Instancia): HTMLElement {
     });
     el.append(modo);
 
-    el.addEventListener('click', () => {
-      if (estado.fase === 'combate') {
+    // Selecionar atacante (fase combate).
+    if (estado.fase === 'combate') {
+      el.addEventListener('click', () => {
         selecionado = selecionado === instancia.uid ? null : instancia.uid;
         render();
-      }
-    });
+      });
+    }
   } else if (selecionado && estado.fase === 'combate') {
     el.addEventListener('click', () => {
       tentarAtaque(selecionado!, { tipo: 'carta', uid: instancia.uid });
@@ -346,16 +474,21 @@ function tentarAtaque(uid: string, alvo: Alvo): void {
   const r = atacar(estado, 0, uid, alvo);
   selecionado = null;
   estado = r.estado;
-  // Animação: marca a carta atingida por 600ms.
+  // Animação de ataque.
   if (alvo.tipo === 'carta') {
-    animacaoAlvo = alvo.uid;
+    animacao = { tipo: 'vulto', de: uid, para: alvo.uid };
     render();
     setTimeout(() => {
-      animacaoAlvo = null;
+      animacao = null;
       render();
-    }, 600);
+    }, 700);
   } else {
+    animacao = { tipo: 'fogo', de: uid, para: 'hp1' };
     render();
+    setTimeout(() => {
+      animacao = null;
+      render();
+    }, 700);
   }
 }
 
@@ -370,7 +503,43 @@ function tentarModo(uid: string): void {
   render();
 }
 
-// --- Log ---------------------------------------------------------------
+// --- Animações de ataque -----------------------------------------------
+
+function aplicarAnimacao(): void {
+  if (!animacao) return;
+  const { tipo, de, para } = animacao;
+  const deEl = app.querySelector(`[data-uid="${de}"]`);
+  if (!deEl) return;
+
+  if (tipo === 'vulto') {
+    const paraEl = app.querySelector(`[data-uid="${para}"]`);
+    if (!paraEl) return;
+    const deRect = deEl.getBoundingClientRect();
+    const paraRect = paraEl.getBoundingClientRect();
+    const vulto = document.createElement('div');
+    vulto.className = 'vulto';
+    vulto.style.left = `${deRect.left + deRect.width / 2}px`;
+    vulto.style.top = `${deRect.top + deRect.height / 2}px`;
+    document.body.append(vulto);
+    requestAnimationFrame(() => {
+      vulto.style.transform = `translate(${paraRect.left + paraRect.width / 2 - deRect.left - deRect.width / 2}px, ${paraRect.top + paraRect.height / 2 - deRect.top - deRect.height / 2}px)`;
+      vulto.style.opacity = '0';
+    });
+    setTimeout(() => vulto.remove(), 700);
+  }
+
+  if (tipo === 'fogo') {
+    const hpEl = app.querySelector('[data-lado="1"]');
+    if (!hpEl) return;
+    const fogo = document.createElement('div');
+    fogo.className = 'fogo-hp';
+    fogo.textContent = '🔥';
+    hpEl.append(fogo);
+    setTimeout(() => fogo.remove(), 700);
+  }
+}
+
+// --- Log (lateral esquerda) -------------------------------------------
 
 function logPanel(): HTMLElement {
   const aside = document.createElement('aside');
@@ -379,7 +548,7 @@ function logPanel(): HTMLElement {
   titulo.textContent = 'Log do duelo';
   aside.append(titulo);
   const lista = document.createElement('ol');
-  for (const linha of estado.log.slice(-14)) {
+  for (const linha of estado.log.slice(-20)) {
     const li = document.createElement('li');
     li.textContent = linha;
     lista.append(li);
@@ -390,6 +559,53 @@ function logPanel(): HTMLElement {
   info.textContent =
     'Invocar não gasta: exige level da partida ≥ nível da carta. ' +
     'A cada 100 de dano sofrido, seu level cai 1 (mínimo 0).';
+  aside.append(info);
+  return aside;
+}
+
+// --- Detalhes (lateral direita) ----------------------------------------
+
+function detalhesPanel(): HTMLElement {
+  const aside = document.createElement('aside');
+  aside.className = 'detalhes';
+  const titulo = document.createElement('h3');
+  titulo.textContent = 'Detalhes';
+  aside.append(titulo);
+
+  if (!detalheUid) {
+    const vazio = document.createElement('p');
+    vazio.className = 'detalhes-vazio';
+    vazio.textContent = 'Clique numa carta para ver detalhes.';
+    aside.append(vazio);
+    return aside;
+  }
+
+  const cartaId = cartaIdDe(detalheUid);
+  const carta = CARTAS_POR_ID[cartaId];
+  if (!carta) {
+    const vazio = document.createElement('p');
+    vazio.className = 'detalhes-vazio';
+    vazio.textContent = 'Carta não encontrada.';
+    aside.append(vazio);
+    return aside;
+  }
+
+  const ampliada = document.createElement('div');
+  ampliada.className = `carta vertical ampliada ${RARITY_CLASS[carta.raridade]}`;
+  ampliada.innerHTML = `
+    <span class="carta-nome">${carta.nome}</span>
+    <span class="carta-nivel">Nv ${carta.nivel}</span>
+    <span class="carta-desc">${carta.descricao}</span>
+    <span class="carta-stats">
+      <b class="atk">⚔ ${carta.atk}</b>
+      <b class="def">🛡 ${carta.def}</b>
+      <b class="eva">💨 ${carta.eva}%</b>
+    </span>`;
+  aside.append(ampliada);
+
+  const info = document.createElement('p');
+  info.className = 'detalhes-info';
+  info.textContent = `Raridade: ${carta.raridade} · Exige level ${carta.nivel} na partida`;
   aside.append(info);
   return aside;
 }
