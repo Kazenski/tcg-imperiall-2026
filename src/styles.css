@@ -10,6 +10,11 @@
   --def: #4a9de0;
   --eva: #7dd87d;
   --fase-ativa: #c8a24a;
+  /* Tamanho da carta: único ponto de ajuste da responsividade. */
+  --carta-w: 110px;
+  --carta-h: 164px;
+  --gap: 8px;
+  --raio: 10px;
 }
 
 * {
@@ -24,7 +29,7 @@ body {
 }
 
 #app {
-  max-width: 1400px;
+  max-width: 1720px;
   margin: 0 auto;
   padding: 12px;
   display: flex;
@@ -36,17 +41,42 @@ body {
 
 .layout {
   display: grid;
-  grid-template-columns: 220px 1fr 260px;
+  grid-template-columns: 210px minmax(0, 1fr) 250px;
   gap: 10px;
   align-items: start;
 }
 
-/* Centro: campos espelhados lado a lado */
+/*
+ * Centro: as fases no topo, depois uma linha por jogador
+ * (deck + campo) e a mão no fim. `minmax(0, 1fr)` / `min-width: 0`
+ * impedem que o conteúdo estoure a coluna.
+ */
 .centro {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
+  display: flex;
+  flex-direction: column;
   gap: 10px;
-  align-items: start;
+  min-width: 0;
+}
+
+/*
+ * Cada `.lado` é uma linha: deck + campo.
+ *   .inimigo → deck primeiro (à esquerda)
+ *   .jogador → campo primeiro, deck depois (à direita)
+ */
+.lado {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  min-width: 0;
+}
+
+.lado > .campo {
+  flex: 1;
+  min-width: 0;
+}
+
+.lado > .deck {
+  flex: 0 0 auto;
 }
 
 /* --- HUD ---------------------------------------------------- */
@@ -94,6 +124,19 @@ body {
 .lp.alvejavel {
   border-color: var(--atk);
   cursor: crosshair;
+  animation: pulsarVermelho 1.2s ease-in-out infinite;
+}
+
+/* ataque direto bloqueado por criaturas em campo */
+.lp.bloqueado {
+  border-color: #4b3b3b;
+  cursor: not-allowed;
+  opacity: 0.65;
+}
+
+@keyframes pulsarVermelho {
+  0%, 100% { box-shadow: 0 0 0 0 #e0533d00; }
+  50% { box-shadow: 0 0 14px 2px #e0533d88; }
 }
 
 .lp .nome {
@@ -184,29 +227,45 @@ body {
 .campo h2,
 .mao h2 {
   margin: 0 0 6px;
-  font-size: 0.9rem;
+  font-size: 0.85rem;
   opacity: 0.75;
   text-transform: uppercase;
   letter-spacing: 0.08em;
+  text-align: center;
 }
 
 .deck-pilha {
   display: flex;
   justify-content: center;
-  padding: 8px;
+  padding: 0;
 }
 
-.deck-carta {
-  width: 110px;
-  height: 154px;
+/*
+ * O verso do deck usa a imagem própria (não a moldura das
+ * cartas). O seletor precisa de 2 classes para vencer o
+ * `background: var(--painel)` de `.carta`, que vem antes.
+ */
+.carta.deck-carta {
+  width: var(--carta-w);
+  height: var(--carta-h);
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   gap: 8px;
-  background: url('/tcg-imperiall-2026/imagens/verso-deck.png') center/cover no-repeat, linear-gradient(135deg, #1a1d28, #12151c);
-  border: 2px solid var(--borda);
-  border-radius: 8px;
+  background-image: url('/tcg-imperiall-2026/imagens/verso-deck.jpg');
+  background-position: center;
+  background-size: cover;
+  background-repeat: no-repeat;
+  background-color: #0d1015;
+  border: 1px solid var(--borda);
+  border-radius: var(--raio);
+  padding: 8px;
+}
+
+/* o verso já tem moldura própria: sem overlay da carta */
+.carta.deck-carta::after {
+  content: none;
 }
 
 .deck-carta.clicavel {
@@ -245,22 +304,23 @@ body {
 
 .zonas {
   display: grid;
-  grid-template-columns: repeat(5, 110px);
-  gap: 8px;
+  grid-template-columns: repeat(5, var(--carta-w));
+  gap: var(--gap);
+  justify-content: center;
 }
 
-.zona {
-  width: 110px;
-  height: 154px;
-  border: 1px dashed var(--borda);
-  border-radius: 8px;
-  background: #12151c;
-  display: flex;
+/*
+ * Campo inimigo espelhado: as zonas saem em ordem inversa para
+ * os dois campos ficarem simétricos (o que é zona 0 de um lado é
+ * zona 4 do outro). Só a exibição muda — `data-zona` continua
+ * guardando o índice real usado pela regra.
+ */
+.zonas.espelhado {
+  direction: rtl;
 }
 
-.zona .carta {
-  width: 100%;
-  height: 100%;
+.zonas.espelhado > .zona {
+  direction: ltr;
 }
 
 /* --- Cartas (visual YGO: verticais) ---------------------------- */
@@ -269,17 +329,56 @@ body {
   position: relative;
   display: flex;
   flex-direction: column;
-  border-radius: 8px;
   background: var(--painel);
-  border: 2px solid var(--borda);
   font-size: 0.8rem;
   user-select: none;
 }
 
+/*
+ * A moldura (313x626 PNG com centro transparente) entra como
+ * overlay por cima da carta via ::after — assim o desenho da
+ * moldura fica nítido nas bordas e o conteúdo fica visível
+ * no miolo. `pointer-events: none` mantém os cliques na carta.
+ */
 .carta.vertical {
-  min-height: 154px;
-  padding: 6px;
-  background: url('/tcg-imperiall-2026/imagens/moldura-carta.png') center/cover no-repeat, var(--painel);
+  min-height: var(--carta-h);
+  padding: 12px 14px;
+  border-radius: var(--raio);
+}
+
+.carta.vertical::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: url('/tcg-imperiall-2026/imagens/moldura-carta.png') center / 100% 100% no-repeat;
+  pointer-events: none;
+  z-index: 1;
+  border-radius: var(--raio);
+}
+
+/* conteúdo acima da moldura */
+.carta.vertical > * {
+  position: relative;
+  z-index: 2;
+}
+
+/* moldura fina para as zonas vazias do campo */
+.zona {
+  width: var(--carta-w);
+  height: var(--carta-h);
+  border: 1px dashed var(--borda);
+  border-radius: var(--raio);
+  background:
+    linear-gradient(135deg, #12151c, #0d1015),
+    var(--painel);
+  display: flex;
+  align-items: stretch;
+  justify-content: stretch;
+}
+
+.zona .carta {
+  width: 100%;
+  height: 100%;
 }
 
 .carta-nome {
@@ -335,32 +434,33 @@ body {
   color: var(--eva);
 }
 
-/* molduras por raridade */
+/*
+ * Raridade: como a moldura PNG cobre a borda da carta, a cor da
+ * raridade aparece como brilho (glow) ao redor do quadro.
+ */
 .rar-comum {
-  border-color: #6b7280;
+  box-shadow: 0 0 5px #6b728055;
 }
 
 .rar-incomum {
-  border-color: #4a9de0;
+  box-shadow: 0 0 8px #4a9de066;
 }
 
 .rar-raro {
-  border-color: #a06be0;
+  box-shadow: 0 0 10px #a06be077;
 }
 
 .rar-epico {
-  border-color: #e0a03d;
+  box-shadow: 0 0 12px #e0a03d88;
 }
 
 .rar-lendario {
-  border-color: var(--ouro);
-  box-shadow: 0 0 12px #c8a24a55;
+  box-shadow: 0 0 16px 2px #c8a24aaa;
 }
 
 /* estados */
 .carta.selecionada {
-  border-color: var(--ouro);
-  box-shadow: 0 0 0 2px var(--ouro);
+  box-shadow: 0 0 0 3px var(--ouro), 0 0 18px 4px #c8a24aaa;
 }
 
 .carta.atacou {
@@ -405,20 +505,23 @@ body {
 
 .mao-lista {
   display: flex;
-  gap: 8px;
+  gap: var(--gap);
   overflow-x: auto;
-  padding: 8px 4px;
-  min-height: 170px;
+  padding: 12px 4px 8px;
+  min-height: calc(var(--carta-h) + 20px);
+  align-items: flex-start;
 }
 
 .mao-lista .carta {
-  min-width: 110px;
+  width: var(--carta-w);
+  height: var(--carta-h);
+  min-width: var(--carta-w);
   cursor: pointer;
   flex-shrink: 0;
 }
 
 .mao-lista .carta:hover {
-  border-color: var(--ouro);
+  box-shadow: 0 0 14px 2px #c8a24a88;
   transform: translateY(-4px);
 }
 
@@ -511,8 +614,9 @@ body {
 }
 
 .carta.ampliada {
-  min-height: 220px;
-  padding: 10px;
+  width: 100%;
+  min-height: 300px;
+  padding: 20px 22px;
 }
 
 .carta.ampliada .carta-nome {
@@ -646,13 +750,131 @@ body {
 
 /* --- Responsivo ---------------------------------------------------- */
 
-@media (max-width: 1100px) {
+/*
+ * A responsividade é toda comandada por `--carta-w` / `--carta-h`:
+ * a moldura, a zona do campo, o deck e a mão usam esses valores,
+ * então basta trocar a variável em cada faixa.
+ *
+ * Largura necessária para uma linha (deck + 5 zonas):
+ *   deck + gap + 5 * carta-w + 4 * gap
+ */
+
+/* Telas médias: cartas um pouco menores, colunas laterais encolhem. */
+@media (max-width: 1500px) {
+  :root {
+    --carta-w: 98px;
+    --carta-h: 146px;
+  }
+
   .layout {
-    grid-template-columns: 1fr;
+    grid-template-columns: 190px minmax(0, 1fr) 220px;
+  }
+
+  .carta.vertical {
+    padding: 10px 11px;
+  }
+}
+
+/* log e detalhes viram barras horizontais acima do jogo. */
+@media (max-width: 1150px) {
+  :root {
+    --carta-w: 92px;
+    --carta-h: 138px;
+  }
+
+  .layout {
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .log,
   .detalhes {
     position: static;
+  }
+
+  .log ol {
+    max-height: 120px;
+  }
+
+  .detalhes {
+    display: grid;
+    grid-template-columns: 150px minmax(0, 1fr);
+    gap: 10px;
+    align-items: start;
+  }
+
+  .detalhes h3 {
+    grid-column: 1 / -1;
+    margin: 0;
+  }
+
+  .carta.ampliada {
+    min-height: 210px;
+  }
+}
+
+/* Celular: carta menor, HUD e fases compactos. */
+@media (max-width: 620px) {
+  :root {
+    --carta-w: 82px;
+    --carta-h: 122px;
+    --gap: 6px;
+  }
+
+  #app {
+    padding: 8px;
+  }
+
+  .hud {
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 8px;
+  }
+
+  .acoes {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .fases {
+    flex-wrap: wrap;
+  }
+
+  .fase {
+    padding: 4px 8px;
+    font-size: 0.72rem;
+  }
+
+  .detalhes {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .log ol {
+    max-height: 96px;
+  }
+}
+
+/*
+ * Telas muito estreitas: o deck não cabe mais ao lado das 5 zonas,
+ * então ele sobe para cima do próprio campo.
+ */
+@media (max-width: 520px) {
+  :root {
+    --carta-w: 74px;
+    --carta-h: 110px;
+  }
+
+  .lado {
+    flex-direction: column;
+  }
+
+  .lado > .deck,
+  .lado > .campo {
+    width: 100%;
+  }
+
+  .deck h2,
+  .campo h2,
+  .mao h2 {
+    font-size: 0.75rem;
   }
 }

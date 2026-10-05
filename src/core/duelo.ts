@@ -23,7 +23,10 @@
  *       atk > def -> alvo destruído, SEM dano ao defensor;
  *       atk < def -> alvo sobrevive, atacante toma a diferença;
  *       empate    -> nada acontece.
- *   - ataque direto ao jogador: sempre acerta (dano = atk).
+ *   - ataque direto ao jogador: só é permitido com o campo
+ *       inimigo VAZIO; com qualquer criatura em campo é
+ *       obrigatório atacar uma criatura. Se passar, o dano
+ *       é sempre o ATK (acerto certo).
  *
  * EVA está reservada para cartas de efeitos especiais
  * (mágicas/armadilhas) e NÃO afeta o combate.

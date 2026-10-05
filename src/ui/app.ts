@@ -118,18 +118,27 @@ function hud(): HTMLElement {
   placar.className = 'placar';
   for (const lado of [0, 1] as const) {
     const pl = document.createElement('div');
-    pl.className = 'lp' + (lado === 1 && selecionado && estado.fase === 'combate' ? ' alvejavel' : '');
+    pl.className = 'lp';
     pl.dataset.lado = String(lado);
     pl.innerHTML = `
       <span class="nome">${lado === 0 ? 'Você' : 'Oponente'}</span>
       <span class="lp-num">${estado.lp[lado]}</span>
       <span class="level">Lv ${estado.levelPartida[lado]}</span>
       <span class="dano">${estado.danoRecebido[lado]} dano sofrido</span>`;
-    if (lado === 1 && estado.fase === 'combate') {
-      pl.addEventListener('click', () => {
-        if (!selecionado) return;
-        tentarAtaque(selecionado, { tipo: 'jogador' });
-      });
+
+    // Só fica "alvejável" se o jogador 0 tem um atacante
+    // selecionado E o ataque direto é legal (campo inimigo vazio).
+    if (lado === 1 && selecionado && estado.fase === 'combate' && estado.vez === 0) {
+      if (motivoNaoPodeAtacar(estado, 0, selecionado, { tipo: 'jogador' }) === null) {
+        pl.classList.add('alvejavel');
+        pl.title = 'Clique para atacar a vida diretamente';
+        pl.addEventListener('click', () => {
+          tentarAtaque(selecionado!, { tipo: 'jogador' });
+        });
+      } else {
+        pl.classList.add('bloqueado');
+        pl.title = 'Campo inimigo tem criaturas: ataque uma carta';
+      }
     }
     placar.append(pl);
   }
@@ -280,8 +289,19 @@ function adversario(jogador: 0 | 1): 0 | 1 {
 function centroPainel(): HTMLElement {
   const centro = document.createElement('div');
   centro.className = 'centro';
-  // Layout espelhado: campo/inimigo à esquerda, campo/jogador à direita, mão no meio
-  centro.append(deckDo(1), campoDo(1), maoDo(), campoDo(0), deckDo(0), barraFases());
+  centro.append(barraFases());
+
+  // Oponente: deck na ESQUERDA, campo ao lado.
+  const inimigo = document.createElement('div');
+  inimigo.className = 'lado inimigo';
+  inimigo.append(deckDo(1), campoDo(1));
+
+  // Jogador: campo ao lado, deck na DIREITA (espelhado).
+  const jogador = document.createElement('div');
+  jogador.className = 'lado jogador';
+  jogador.append(campoDo(0), deckDo(0));
+
+  centro.append(inimigo, jogador, maoDo());
   return centro;
 }
 
@@ -314,7 +334,7 @@ function descricaoFase(fase: string): string {
   switch (fase) {
     case 'compra': return 'Clique no deck para comprar 1 carta';
     case 'principal': return 'Invoque (1 monstro/turno), mude modos, use magias';
-    case 'combate': return 'Selecione o atacante e clique no alvo';
+    case 'combate': return 'Selecione o atacante e clique no alvo (vida só com campo inimigo vazio)';
     case 'finalizacao': return 'Avançar sem ações';
     case 'fim': return 'Última olhada — sem mexer no campo';
     default: return '';
@@ -360,10 +380,13 @@ function campoDo(lado: Jogador): HTMLElement {
   titulo.textContent = lado === 0 ? 'Seu campo' : 'Campo inimigo';
   sec.append(titulo);
   const zonas = document.createElement('div');
-  zonas.className = 'zonas';
+  // O campo inimigo é espelhado (zonas em ordem inversa) para os
+  // dois campos ficarem simétricos, como numa mesa de cartas.
+  zonas.className = 'zonas' + (lado === 1 ? ' espelhado' : '');
   for (let i = 0; i < estado.campo[lado]!.length; i++) {
     const slot = document.createElement('div');
     slot.className = 'zona';
+    slot.dataset.zona = String(i);
     const instancia = estado.campo[lado]![i] ?? null;
     if (instancia) slot.append(cartaElemento(lado, instancia));
     zonas.append(slot);
@@ -558,6 +581,9 @@ function logPanel(): HTMLElement {
   const info = document.createElement('p');
   info.className = 'regra';
   info.textContent =
+    'Regra do combate: só se ataca a vida do inimigo quando o campo dele está ' +
+    'VAZIO. Havendo qualquer criatura em campo, é obrigatório atacar uma delas. ' +
+    'Vale igual para os dois lados. ' +
     'Invocar não gasta: exige level da partida ≥ nível da carta. ' +
     'A cada 100 de dano sofrido, seu level cai 1 (mínimo 0).';
   aside.append(info);

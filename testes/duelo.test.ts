@@ -358,6 +358,67 @@ ok('criatura não ataca duas vezes no mesmo turno', () => {
   );
 });
 
+console.log('ataque direto bloqueado por criaturas');
+ok('não ataca a vida do inimigo com criaturas no campo dele', () => {
+  // Golem do jogador 0, morcego do jogador 1 em campo.
+  const { s, golemUid } = dueloGolemVsCombate('morcego-sombra', 1);
+  assert.ok(s.campo[1]!.some((z) => z !== null));
+  assert.equal(
+    motivoNaoPodeAtacar(s, 0, golemUid, { tipo: 'jogador' }),
+    'não pode atacar a vida do inimigo enquanto ele tiver criaturas no campo',
+  );
+  assert.throws(
+    () => atacar(s, 0, golemUid, { tipo: 'jogador' }),
+    /criaturas no campo/,
+  );
+});
+
+ok('a regra vale igual para o jogador 2 atacando o jogador 1', () => {
+  // Controle: jogador 1 com criatura, jogador 0 sem nenhuma.
+  let s = atePrincipal(dueloNovo({ deck: [deckDe('golem-ferro'), deckDe('morcego-sombra')], seed: 1 }));
+  const golem = primeiroUid(s, 0, 'golem-ferro');
+  s = invocar(s, 0, golem).estado;
+  s = proximaFase(s).estado; // combate
+  s = proximaFase(s).estado; // finalizacao
+  s = proximaFase(s).estado; // fim
+  s = proximaFase(s).estado; // termina turno → vez 1
+  s = comprarCarta(s, 1).estado; // compra → principal
+  const morcego = primeiroUid(s, 1, 'morcego-sombra');
+  s = invocar(s, 1, morcego).estado;
+  s = proximaFase(s).estado; // combate
+  assert.ok(s.campo[0]!.some((z) => z !== null));
+  assert.equal(
+    motivoNaoPodeAtacar(s, 1, morcego, { tipo: 'jogador' }),
+    'não pode atacar a vida do inimigo enquanto ele tiver criaturas no campo',
+  );
+});
+
+ok('ataque direto passa quando o campo inimigo está vazio', () => {
+  // Só o jogador 0 tem criatura; o campo 1 está limpo.
+  const s = ateCombate(dueloNovo({ deck: [deckDe('golem-ferro'), deckDe('golem-ferro')], seed: 42 }));
+  const golem = primeiroUid(s, 0, 'golem-ferro');
+  const comGolem = invocar({ ...s, fase: 'principal' as const }, 0, golem).estado;
+  assert.ok(comGolem.campo[1]!.every((z) => z === null));
+  assert.equal(motivoNaoPodeAtacar({ ...comGolem, fase: 'combate' as const }, 0, golem, { tipo: 'jogador' }), null);
+  const antes = comGolem.lp[1]!;
+  const s2 = atacar({ ...comGolem, fase: 'combate' as const }, 0, golem, { tipo: 'jogador' }).estado;
+  assert.equal(s2.lp[1], antes - CARTAS_POR_ID['golem-ferro']!.atk);
+});
+
+ok('derrotar a última criatura libera o ataque direto', () => {
+  const { s, golemUid, alvoUid } = dueloGolemVsCombate('morcego-sombra', 1);
+  // Primeiro o golem limpa o campo do oponente...
+  const s1 = atacar(s, 0, golemUid, { tipo: 'carta', uid: alvoUid }).estado;
+  assert.ok(s1.campo[1]!.every((z) => z === null));
+  // ...e a próxima criatura já pode bater direto na vida.
+  const uid2 = primeiroUid(s1, 0, 'golem-ferro');
+  let s2 = proximoTurno(s1);
+  s2 = comprarCarta(s2, 0).estado;
+  s2 = invocar(s2, 0, uid2).estado;
+  s2 = proximaFase(s2).estado; // combate
+  assert.equal(motivoNaoPodeAtacar(s2, 0, uid2, { tipo: 'jogador' }), null);
+});
+
 console.log('IA');
 ok('a IA joga o turno inteiro respeitando as fases', () => {
   const s0 = dueloNovo({ deck: [deckPadrao(), deckPadrao()], seed: 42 });

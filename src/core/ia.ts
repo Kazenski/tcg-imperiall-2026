@@ -7,7 +7,10 @@
  *                   (máx 1 monstro/turno) e deixa tudo em ataque
  *   3. combate:     cada criatura ataca — prefere destruir a
  *                   criatura inimiga mais fraca que vence;
- *                   sem alvo assim, ataca o jogador direto
+ *                   sem alvo assim, ataca o jogador direto,
+ *                   mas só se o campo inimigo estiver vazio
+ *                   (regra: não se bate na vida com criaturas
+ *                   em campo)
  *   4. finalizacao: avança
  *   5. fim:         termina o turno
  *
