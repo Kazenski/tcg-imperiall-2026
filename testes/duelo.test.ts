@@ -211,6 +211,11 @@ function niveisAte(nivel: number): number[] {
   return Array.from({ length: nivel + 1 }, (_, i) => i);
 }
 
+/** O outro jogador. */
+function adversarioDe(jogador: Jogador): Jogador {
+  return jogador === 0 ? 1 : 0;
+}
+
 /** Pilha do jogador num índice de zona. */
 function pilha(s: EstadoDuelo, jogador: Jogador, zona: number): Pilha {
   return s.campo[jogador]![zona]!;
@@ -378,6 +383,71 @@ ok('as 5 pilhas são independentes', () => {
 });
 
 console.log('pilha no combate');
+ok('NENHUMA carta enterrada interage — só o topo, sempre', () => {
+  /*
+   * Trava a regra: com uma pilha cheia (lv0..lv8) dos dois lados,
+   * nenhuma das 8 cartas enterradas de cada lado pode atacar nem
+   * ser atacada, em nenhuma hipótese. Só o topo responde.
+   */
+  let s = dueloNovo({ deck: [deckEscada(), deckEscada()], seed: 42 });
+  s = empilharNiveis(s, 0, 0, niveisAte(8)); // pilha 1 do jogador 0, cheia
+  s = empilharNiveis(s, 1, 0, niveisAte(8)); // pilha 1 do jogador 1, cheia
+  s = proximoTurno(s);
+  s = atePrincipal(s);
+  s = proximaFase(s).estado; // fase de combate do jogador 0
+
+  for (const jogador of [0, 1] as const) {
+    const inimigo = adversarioDe(jogador);
+    // Estado na fase de combate COM a vez deste jogador, senão a
+    // validação para em "não é a sua vez" antes de olhar a pilha.
+    const meu = { ...s, vez: jogador, fase: 'combate' as const };
+    const turnoInimigo = { ...s, vez: inimigo, fase: 'combate' as const };
+    const turnoPrincipal = { ...s, vez: jogador, fase: 'principal' as const };
+    const p = pilha(s, jogador, 0);
+    assert.equal(p.length, 9, 'pilha cheia de 9 cartas');
+
+    for (let h = 0; h < p.length - 1; h++) {
+      const enterrada = p[h]!.uid;
+
+      // 1) enterrada não ataca (nem a vida, nem outra carta)
+      assert.equal(
+        motivoNaoPodeAtacar(meu, jogador, enterrada, { tipo: 'jogador' }),
+        'só a carta de cima da pilha ataca',
+        `nv ${h} do jogador ${jogador + 1} não pode atacar`,
+      );
+      const alvoTopo = cartaAtiva(pilha(s, inimigo, 0))!.uid;
+      assert.equal(
+        motivoNaoPodeAtacar(meu, jogador, enterrada, { tipo: 'carta', uid: alvoTopo }),
+        'só a carta de cima da pilha ataca',
+        `nv ${h} do jogador ${jogador + 1} não pode atacar carta`,
+      );
+
+      // 2) enterrada não é alvo válido de nenhuma pilha inimiga
+      const atacanteTopo = cartaAtiva(pilha(s, inimigo, 0))!.uid;
+      assert.equal(
+        motivoNaoPodeAtacar(turnoInimigo, inimigo, atacanteTopo, { tipo: 'carta', uid: enterrada }),
+        'a criatura-alvo não está no topo da pilha',
+        `nv ${h} do jogador ${jogador + 1} não pode ser atacada`,
+      );
+
+      // 3) enterrada não troca de modo
+      assert.throws(
+        () => alternarModo(turnoPrincipal, jogador, enterrada),
+        /só a carta de cima da pilha muda de modo/,
+        `nv ${h} do jogador ${jogador + 1} não muda de modo`,
+      );
+    }
+  }
+
+  // o topo de cada lado continua funcionando normalmente
+  const meuTopo = cartaAtiva(pilha(s, 0, 0))!.uid;
+  assert.notEqual(
+    motivoNaoPodeAtacar(s, 0, meuTopo, { tipo: 'jogador' }),
+    'só a carta de cima da pilha ataca',
+    'o topo do jogador 1 pode atacar',
+  );
+});
+
 ok('só a carta de cima da pilha ataca', () => {
   let s = dueloNovo({ deck: [deckEscada(), deckEscada()], seed: 42 });
   s = empilharNiveis(s, 0, 0, niveisAte(1)); // pilha 1 com nv0 e nv1
