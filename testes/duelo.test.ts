@@ -207,6 +207,27 @@ function uidNaMao(s: EstadoDuelo, jogador: Jogador, cartaId: string): string {
   return uid;
 }
 
+/** Avança turnos até ter na mão uma carta do nível pedido (fase Principal). */
+function terNivelNaMao(s: EstadoDuelo, jogador: Jogador, nivel: number): EstadoDuelo {
+  const tem = (e: EstadoDuelo): boolean =>
+    e.mao[jogador]!.some((u) => CARTAS_POR_ID[cartaIdDe(u)]!.nivel === nivel);
+  let atual = s;
+  for (let i = 0; i < 30; i++) {
+    if (tem(atual)) {
+      while (!(atual.vez === jogador && atual.fase === 'principal')) {
+        atual = proximaFase(atual).estado;
+      }
+      return atual;
+    }
+    while (!(atual.vez === jogador && atual.fase === 'compra')) {
+      atual = proximaFase(atual).estado;
+    }
+    atual = comprarCarta(atual, jogador).estado;
+    while (atual.fase !== 'principal') atual = proximaFase(atual).estado;
+  }
+  throw new Error(`nenhuma carta de nível ${nivel} apareceu na mão`);
+}
+
 /** Empilha os níveis informados na pilha `zona` (1 carta por turno). */
 function empilharNiveis(
   s: EstadoDuelo,
@@ -222,7 +243,13 @@ function empilharNiveis(
       atual = proximoTurnoPara(atual, jogador);
       atual = ateTerNivel(atual, jogador, nivel);
     }
-    const uid = primeiroUidNivel(atual, jogador, nivel);
+    // Cartas de efeito também têm nível, mas não entram em pilha.
+    const uid = atual.mao[jogador]!.find(
+      (u) =>
+        CARTAS_POR_ID[cartaIdDe(u)]!.nivel === nivel &&
+        !CARTAS_POR_ID[cartaIdDe(u)]!.tipo,
+    )!;
+    assert.ok(uid, `nenhuma criatura de nível ${nivel} na mão`);
     const motivo = motivoNaoPodeInvocar(atual, jogador, uid, zona);
     assert.equal(motivo, null, `esperava invocar nível ${nivel} na pilha ${zona + 1}: ${motivo}`);
     atual = invocar(atual, jogador, uid, zona).estado;
@@ -1048,6 +1075,91 @@ ok('silenciar impede o ataque', () => {
   const s1 = usarCartaDeEfeito(s0, 0, uid, { alvoUid: alvo.uid }).estado;
   const combate = { ...s1, fase: 'combate' as const, vez: 1 as const };
   assert.equal(motivoNaoPodeAtacar(combate, 1, alvo.uid, { tipo: 'jogador' }), 'essa criatura está silenciada');
+});
+
+console.log('mecânicas com carta auxiliar');
+ok('Emergir aceita pilha vazia e não gasta a invocação do turno', () => {
+  let s0 = dueloNovo({ deck: [deck12('empilhar-rapido', 'sertanejo', 'golem-ferro'), deck12('sertanejo', 'golem-ferro')], seed: 3 });
+  s0 = ateTerCarta(s0, 0, 'empilhar-rapido');
+  s0 = terNivelNaMao(s0, 0, 0);
+  const acao = uidNaMao(s0, 0, 'empilhar-rapido');
+  const nivel0 = s0.mao[0]!.find((u) => CARTAS_POR_ID[cartaIdDe(u)]!.nivel === 0)!;
+  assert.ok(nivel0, 'precisa de uma carta de nível 0 na mão');
+
+  // Pilha vazia é alvo válido para o Emergir (era recusado com
+  // "essa pilha está vazia", o que deixava a mecânica morta).
+  assert.equal(motivoNaoPodeUsar(s0, 0, acao, { zona: 0, cartaMao: nivel0 }), null);
+
+  const s1 = usarCartaDeEfeito(s0, 0, acao, { zona: 0, cartaMao: nivel0 }).estado;
+  assert.equal(pilha(s1, 0, 0).length, 1);
+  assert.equal(s1.invocouMonstro[0], false, 'não gastou a invocação do turno');
+});
+
+ok('Emergir empilha por cima do que já existe, na ordem de níveis', () => {
+  let s0 = dueloNovo({ deck: [deck12('empilhar-rapido', 'sertanejo', 'golem-ferro'), deck12('sertanejo', 'golem-ferro')], seed: 3 });
+  s0 = ateTerCarta(s0, 0, 'empilhar-rapido');
+  s0 = terNivelNaMao(s0, 0, 1);
+  // A pilha é montada por último: enquanto o teste avança turnos a
+  // IA pode derrubar uma pilha de uma carta só.
+  const nivel0 = s0.mao[0]!.find((u) => CARTAS_POR_ID[cartaIdDe(u)]!.nivel === 0)!;
+  assert.ok(nivel0);
+  s0 = invocar(s0, 0, nivel0, 0).estado;
+  assert.equal(pilha(s0, 0, 0).length, 1);
+
+  const acao = uidNaMao(s0, 0, 'empilhar-rapido');
+  const nivel1 = s0.mao[0]!.find((u) => CARTAS_POR_ID[cartaIdDe(u)]!.nivel === 1)!;
+  assert.ok(nivel1);
+
+  // Nível 2 em cima de uma pilha de nível 0 é recusado pela ordem.
+  const nivel2 = s0
+    .mao[0]!
+    .find((u) => CARTAS_POR_ID[cartaIdDe(u)]!.nivel === 2 && !CARTAS_POR_ID[cartaIdDe(u)]!.tipo);
+  if (nivel2) {
+    assert.match(
+      motivoNaoPodeUsar(s0, 0, acao, { zona: 0, cartaMao: nivel2 })!,
+      /só aceita nível 1 agora/,
+    );
+  }
+
+  const s1 = usarCartaDeEfeito(s0, 0, acao, { zona: 0, cartaMao: nivel1 }).estado;
+  assert.equal(pilha(s1, 0, 0).length, 2);
+  assert.deepEqual(
+    pilha(s1, 0, 0).map((i) => CARTAS_POR_ID[cartaIdDe(i.uid)]!.nivel),
+    [0, 1],
+  );
+});
+
+ok('Emergir recusa empilhar carta de efeito', () => {
+  let s0 = dueloNovo({ deck: [deck12('empilhar-rapido', 'remover-1'), deckEscada()], seed: 3 });
+  s0 = atePrincipal(s0);
+  const acao = uidNaMao(s0, 0, 'empilhar-rapido');
+  const efeito = uidNaMao(s0, 0, 'remover-1');
+  assert.match(
+    motivoNaoPodeUsar(s0, 0, acao, { zona: 0, cartaMao: efeito })!,
+    /de efeito e não entra em pilha/,
+  );
+});
+
+ok('Ressuscitar traz uma carta do seu Cemitério de volta para a mão', () => {
+  // Toda carta de Ação jogada vai para o CEMITÉRIO DO DONO. Então
+  // basta jogar um Dano Direto (que não pede alvo) para ter uma carta
+  // lá dentro, e depois tirá-la de volta.
+  let s0 = dueloNovo({ deck: [deck12('ressuscitar', 'dano-direto-1'), deckEscada()], seed: 3 });
+  s0 = ateTerCarta(s0, 0, 'dano-direto-1');
+  const acao = uidNaMao(s0, 0, 'dano-direto-1');
+  assert.equal(motivoNaoPodeUsar(s0, 0, acao, {}), null, 'dano direto não pede alvo');
+
+  const s1 = usarCartaDeEfeito(s0, 0, acao, {}).estado;
+  assert.ok(s1.cementerio[0]!.includes(acao), 'a Ação usada foi para o meu Cemitério');
+
+  const s2 = ateTerCarta(s1, 0, 'ressuscitar');
+  const ressuscitar = uidNaMao(s2, 0, 'ressuscitar');
+  assert.equal(motivoNaoPodeUsar(s2, 0, ressuscitar, { cartaMao: acao }), null);
+
+  const s3 = usarCartaDeEfeito(s2, 0, ressuscitar, { cartaMao: acao }).estado;
+  assert.ok(s3.mao[0]!.includes(acao), 'a carta voltou para a mão');
+  assert.ok(!s3.cementerio[0]!.includes(acao), 'e saiu do Cemitério');
+  assert.equal(s3.cementerio[0]!.length, 1, 'a própria carta de Ressuscitar ocupou o lugar');
 });
 
 console.log('efeitos não são criaturas');

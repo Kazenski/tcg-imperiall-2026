@@ -778,6 +778,74 @@ body {
 
 .lp { position: relative; }
 
+/* --- Cemitério --------------------------------------------------------- */
+
+.cemiterio {
+  margin-top: 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--borda);
+  border-radius: var(--raio);
+  background: #12141b;
+}
+
+.cemiterio h2 {
+  margin: 0 0 6px;
+  font-size: 0.7rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: #8b93a5;
+}
+
+.cemiterio.escolhendo {
+  border-color: var(--ouro);
+  box-shadow: 0 0 0 1px var(--ouro) inset;
+}
+
+.cemiterio-vazio {
+  margin: 0;
+  font-size: 0.72rem;
+  color: #6f7686;
+}
+
+.cemiterio-lista {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.cemiterio-carta {
+  padding: 3px 8px;
+  border: 1px solid var(--borda);
+  border-radius: 999px;
+  background: #0d1015;
+  color: #b9c0cf;
+  font-size: 0.68rem;
+  line-height: 1.4;
+  cursor: pointer;
+}
+
+.cemiterio-carta:hover {
+  border-color: var(--ouro);
+  color: var(--texto);
+}
+
+.cemiterio-carta.selecionada {
+  border-color: var(--ouro);
+  background: #2a2313;
+  color: var(--ouro);
+}
+
+.cemiterio.escolhendo .cemiterio-carta {
+  border-color: #5a4a1e;
+  cursor: pointer;
+}
+
+.cemiterio-mais {
+  align-self: center;
+  font-size: 0.66rem;
+  color: #6f7686;
+}
+
 /* --- Seta de ataque (origem → destino, inclusive HP) ------------------ */
 
 /*

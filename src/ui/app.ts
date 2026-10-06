@@ -112,6 +112,12 @@ let jogando: string | null = null;
  * sai do topo dela). Fica null até o jogador escolher.
  */
 let custoPilha: number | null = null;
+/**
+ * Carta auxiliar escolhida junto com a mecânica: a carta da mão que
+ * o "Emergir" vai empilhar, ou a carta do Cemitério que o
+ * "Ressuscitar" traz de volta. Fica null até o jogador escolher.
+ */
+let cartaAux: string | null = null;
 /** Painel do admin aberto? */
 let adminAberto = false;
 /** Estado do duelo em curso. */
@@ -266,6 +272,7 @@ function hud(): HTMLElement {
     naMao = null;
     jogando = null;
     custoPilha = null;
+    cartaAux = null;
     detalheUid = null;
     render();
   });
@@ -299,6 +306,7 @@ async function avancarFase(): Promise<void> {
   naMao = null;
   jogando = null;
   custoPilha = null;
+  cartaAux = null;
   estado = proximaFase(estado).estado;
   render();
   if (estado.vez === 1 && estado.vencedor === null) await iaComDelays();
@@ -345,8 +353,76 @@ function centroPainel(): HTMLElement {
   jogador.className = 'lado jogador';
   jogador.append(campoDo(0), deckDo(0));
 
-  centro.append(inimigo, barraFases(), jogador, maoDo());
+  centro.append(inimigo, barraFases(), jogador, maoDo(), cemiterioDo(0));
   return centro;
+}
+
+/**
+ * Seu Cemitério: as cartas destruídas, removidas ou já usadas.
+ *
+ * Serve para_two coisas: mostrar o que já saiu de jogo e dar alvo
+ * ao "Ressuscitar", que traz uma carta daqui de volta para a mão.
+ */
+function cemiterioDo(lado: Jogador): HTMLElement {
+  const sec = document.createElement('section');
+  const uids = estado.cementerio[lado]!;
+  sec.className = 'cemiterio';
+  sec.dataset.lado = String(lado);
+
+  const titulo = document.createElement('h2');
+  titulo.textContent = lado === 0 ? `Seu Cemitério (${uids.length})` : `Cemitério do oponente (${uids.length})`;
+  sec.append(titulo);
+
+  // Destacado só quando um "Ressuscitar" está esperando a carta.
+  const escolhendo = lado === 0 && querCartaAux() && jogando !== null && mecDoJogo() === 'ressuscitar';
+  if (escolhendo) sec.classList.add('escolhendo');
+
+  if (uids.length === 0) {
+    const vazio = document.createElement('p');
+    vazio.className = 'cemiterio-vazio';
+    vazio.textContent = lado === 0 ? 'Nada foi para o Cemitério ainda.' : 'O oponente ainda não perdeu nada.';
+    sec.append(vazio);
+    return sec;
+  }
+
+  const lista = document.createElement('div');
+  lista.className = 'cemiterio-lista';
+  for (const uid of uids.slice(-24).reverse()) {
+    const carta = CARTAS_POR_ID[cartaIdDe(uid)];
+    if (!carta) continue;
+    const el = document.createElement('button');
+    el.type = 'button';
+    el.className = `cemiterio-carta ${RARITY_CLASS[carta.raridade]}`;
+    if (cartaAux === uid) el.classList.add('selecionada');
+    el.textContent = `${carta.nome} · Nv ${carta.nivel}`;
+    el.title = `${carta.nome} — ${carta.descricao}`;
+    el.addEventListener('click', () => {
+      detalheUid = uid;
+      // "Ressuscitar" não tem outro alvo além da carta do Cemitério,
+      // então um clique já resolve.
+      if (escolhendo) {
+        cartaAux = uid;
+        jogarEfeito({ cartaMao: uid });
+      } else {
+        render();
+      }
+    });
+    lista.append(el);
+  }
+  sec.append(lista);
+  if (uids.length > 24) {
+    const mais = document.createElement('span');
+    mais.className = 'cemiterio-mais';
+    mais.textContent = `+${uids.length - 24}`;
+    sec.append(mais);
+  }
+  return sec;
+}
+
+/** Mecânica da carta de efeito que está em jogo, ou '' se nenhuma. */
+function mecDoJogo(): string {
+  if (jogando === null) return '';
+  return CARTAS_POR_ID[cartaIdDe(jogando)]?.cartaMecanica?.mecanica ?? '';
 }
 
 /** Separador de fases — fica ENTRE os dois campos. */
@@ -482,7 +558,7 @@ function pilhaElemento(lado: Jogador, indice: number, pilha: Pilha): HTMLElement
         render();
       });
     } else {
-      zona.addEventListener('click', () => jogarEfeito({ zona: indice }));
+      zona.addEventListener('click', () => jogarEfeito({ zona: indice, cartaMao: cartaAux ?? undefined }));
     }
   }
 
@@ -662,6 +738,13 @@ function maoDo(): HTMLElement {
         escolherEfeito(uid);
         return;
       }
+      // "Emergir" já está esperando a carta da mão que vai empilhar:
+      // clicar nela escolhe a carta e acende as pilhas do nível certo.
+      if (jogando !== null && querCartaAux()) {
+        cartaAux = uid;
+        render();
+        return;
+      }
       if (estado.fase !== 'principal') {
         render();
         return;
@@ -705,6 +788,7 @@ function escolherEfeito(uid: string): void {
   if (jogando === uid) {
     jogando = null;
     custoPilha = null;
+    cartaAux = null;
     render();
     return;
   }
@@ -732,6 +816,7 @@ function escolherEfeito(uid: string): void {
   jogando = uid;
   naMao = null;
   custoPilha = null;
+  cartaAux = null;
   render();
 }
 
@@ -743,11 +828,13 @@ function jogarEfeito(escolha: EscolhaAlvo): void {
     estado = usarCartaDeEfeito(estado, 0, uid, escolha).estado;
     jogando = null;
     custoPilha = null;
+    cartaAux = null;
     selecionado = null;
     render();
   } catch (e) {
     jogando = null;
     custoPilha = null;
+    cartaAux = null;
     render();
     aviso(e instanceof Error ? e.message : String(e));
   }
@@ -765,6 +852,17 @@ function pilhasComCarta(): number[] {
 /** A carta em jogo é uma Reação (que precisa pagar custo)? */
 function jogandoEhReacao(): boolean {
   return jogando !== null && CARTAS_POR_ID[cartaIdDe(jogando)]?.tipo === 'reacao';
+}
+
+/**
+ * A mecânica em jogo precisa que o jogador escolha uma carta
+ * além do alvo: o "Emergir" empilha uma carta da sua mão e o
+ * "Ressuscitar" traz uma do seu Cemitério.
+ */
+function querCartaAux(): boolean {
+  if (jogando === null) return false;
+  const mec = CARTAS_POR_ID[cartaIdDe(jogando)]?.cartaMecanica;
+  return mec?.mecanica === 'empilhar-rapido' || mec?.mecanica === 'ressuscitar';
 }
 
 /**
@@ -792,7 +890,12 @@ function pilhaAlvoValida(lado: Jogador, zona: number): boolean {
     return lado === 0 && custoPilha === null && estado.campo[0]![zona]!.length > 0;
   }
   if (mec.alvo === 'pilha-inimiga') return lado === 1;
-  if (mec.alvo === 'pilha-sua') return lado === 0;
+  if (mec.alvo === 'pilha-sua') {
+    // "Emergir": só acende depois de escolher a carta da mão, e
+    // só nas pilhas que aceitam o nível dela.
+    if (cartaAux === null) return false;
+    return lado === 0 && pilhasQueAceitam(estado, 0, CARTAS_POR_ID[cartaIdDe(cartaAux)]!.nivel).includes(zona);
+  }
   return false;
 }
 

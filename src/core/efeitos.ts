@@ -207,9 +207,14 @@ function alvoValido(
       return 'escolha uma pilha como alvo';
     }
     const pilha = pilhas[escolha.zona]!;
-    if (pilha.length === 0) return 'essa pilha está vazia';
-    const topo = cartaAtiva(pilha)!;
-    if (temMarca(topo, 'trava') && mec.alvo === 'pilha-sua') {
+    // O "Emergir" é a única mecânica que age numa pilha SUA: ela
+    // empilha por cima do que já existe, então pilha vazia é
+    // resultado válido e não motivo de recusa.
+    if (pilha.length === 0 && mec.mecanica !== 'empilhar-rapido') {
+      return 'essa pilha está vazia';
+    }
+    const topo = cartaAtiva(pilha);
+    if (topo && temMarca(topo, 'trava') && mec.alvo === 'pilha-sua') {
       return 'essa pilha está travada neste ciclo';
     }
     if (mec.mecanica === 'trocar-topo' && pilha.length < 2) {
@@ -218,12 +223,16 @@ function alvoValido(
     if (mec.mecanica === 'espelhar-modo') {
       const minha = cartaAtiva(pilhaAtivaDoJogador(s, jogador));
       if (!minha) return 'você não tem carta ativa para espelhar';
-      if (minha.modo === topo.modo) return 'o modo já é o mesmo dos dois lados';
+      if (minha.modo === topo!.modo) return 'o modo já é o mesmo dos dois lados';
     }
     if (mec.mecanica === 'empilhar-rapido') {
       const cartaMao = CARTAS_POR_ID[cartaIdDe(escolha.cartaMao ?? '')];
       if (!cartaMao) return 'escolha uma carta da sua mão';
-      const aceito = pilha.length === 0 ? 0 : CARTAS_POR_ID[cartaIdDe(cartaAtiva(pilha)!.uid)]!.nivel + 1;
+      if (cartaMao.tipo === 'acao' || cartaMao.tipo === 'reacao') {
+        return 'essa carta é de efeito e não entra em pilha';
+      }
+      // Mesma ordem de níveis da invocação normal.
+      const aceito = pilha.length === 0 ? 0 : CARTAS_POR_ID[cartaAtiva(pilha)!.cartaId]!.nivel + 1;
       if (cartaMao.nivel !== aceito) {
         return `essa pilha só aceita nível ${aceito} agora`;
       }
